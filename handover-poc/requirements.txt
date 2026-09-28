@@ -4,3 +4,6 @@ scikit-learn
 pyyaml
 click
 pytest
+fastapi
+uvicorn[standard]
+httpx

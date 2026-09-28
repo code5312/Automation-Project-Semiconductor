@@ -46,6 +46,14 @@ def test_get_event_returns_none_when_missing(tmp_path):
     assert repository.get_event(db_path, "EVT-does-not-exist") is None
 
 
+def test_get_event_on_never_initialized_db_returns_none(tmp_path):
+    """get_event must self-initialize -- a DB file that was never explicitly
+    init_db'd (e.g. a fresh path on first API request) should not raise."""
+    db_path = tmp_path / "brand_new.db"
+    assert not db_path.exists()
+    assert repository.get_event(db_path, "EVT-does-not-exist") is None
+
+
 def test_save_event_upserts_by_event_id(tmp_path):
     db_path = tmp_path / "handover.db"
     repository.save_event(db_path, _sample_event("EVT-1", primary_dept="M-ENG"))

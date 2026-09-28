@@ -103,6 +103,7 @@ def save_event(db_path: str | Path, event: dict) -> None:
 
 
 def get_event(db_path: str | Path, event_id: str) -> Optional[dict]:
+    init_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute("SELECT raw_json FROM events WHERE event_id = ?", (event_id,)).fetchone()
     return json.loads(row[0]) if row else None
@@ -116,6 +117,7 @@ def list_events(
     offset: int = 0,
 ) -> list[dict]:
     """Most recent events first, optionally filtered by scenario_id/primary_dept."""
+    init_db(db_path)
     query = "SELECT raw_json FROM events"
     conditions = []
     params: list = []
@@ -136,6 +138,7 @@ def list_events(
 
 
 def count_events(db_path: str | Path) -> int:
+    init_db(db_path)
     with _connect(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
     return row[0] if row else 0

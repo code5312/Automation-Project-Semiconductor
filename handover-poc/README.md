@@ -4,8 +4,9 @@
 
 세 개의 공개 데이터셋(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 하나의
 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인을 판정해 주관 부서(M-ENG/P-ENG/YI)를
-제안하는 시스템의 프로토타입입니다. API·DB·대시보드·PDF·LLM 요약은 다음 단계이며, 이번
-단계는 순수 함수 위주의 핵심 로직 + CLI + 테스트 + 배치 실험까지만 다룹니다.
+제안하는 시스템의 프로토타입입니다. 핵심 로직(ingest/signals/scenarios/diagnosis)은
+순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI가 모두 그 위에 얇게 얹혀 있습니다.
+대시보드·PDF·LLM 요약은 다음 단계입니다.
 
 ## 데이터 상태 (중요)
 
@@ -93,8 +94,36 @@ data/raw/
 primary_dept, rule_id 등)과 원본을 그대로 보존하는 `raw_json` 컬럼을 함께 둡니다: 필터는
 컬럼으로, 상세 조회는 `raw_json`으로 하면 되고 이벤트 JSON 스키마가 바뀌어도 컬럼만
 맞춰주면 됩니다. `event_id`가 기본키라 같은 이벤트를 다시 저장하면 덮어씁니다(upsert).
-다음 단계(FastAPI)는 이 `src/storage/repository.py`를 그대로 가져다 쓸 예정이라, 여기엔
-API 관련 코드가 없습니다.
+## API 사용법 (FastAPI)
+
+```bash
+./.venv/Scripts/python.exe -m uvicorn src.api.main:app --reload
+```
+
+앱 시작 시 `SamplingContext`(SECOM/진동/WM-811K + 학습된 센서 모델)를 한 번만 로드해
+재사용합니다 (요청마다 다시 로드하지 않음). 엔드포인트:
+
+| 메서드/경로 | 설명 |
+| --- | --- |
+| `GET /health` | 헬스체크 |
+| `GET /scenarios` | `config/scenarios.yaml`의 시나리오 정의 |
+| `POST /events/generate` | `{"scenario_id": "SC-EQ", "seed": 42}` → 이벤트 생성 + DB 저장 |
+| `GET /events/{event_id}` | 단일 이벤트 조회 (없으면 404) |
+| `GET /events?scenario_id=&primary_dept=&limit=&offset=` | 필터 조회 |
+| `POST /validate` | `{"event": {...}}` → 정합성 검증 (실패 시 422) |
+
+CLI의 `build_event`/`load_rules`와 `storage/repository.py`를 그대로 재사용하고, 이
+모듈에는 진단/신호/시나리오 로직이 전혀 없습니다 — 순수 함수를 HTTP로 감싸기만 했습니다.
+
+### 테스트에서 실데이터를 건드리지 않는 이유
+
+`src/api/main.py`는 `get_ctx`/`get_rules`/`get_db_path`를 FastAPI `Depends`로 주입받고,
+`tests/test_api.py`는 `app.dependency_overrides`로 가벼운 합성 데이터(`tests/conftest.py`의
+`build_fake_ctx()`)를 주입합니다. **주의**: `TestClient(app)`을 `with` 컨텍스트 매니저로
+쓰면(`with TestClient(app) as c:`) 앱의 실제 `lifespan`이 실행되어 `dependency_overrides`와
+무관하게 진짜 `LSWMD.pkl`/SECOM/진동 파일을 로드해버립니다 — 처음 이 실수로 테스트가
+몇 분씩 걸렸습니다. 그래서 `TestClient(app)`을 컨텍스트 매니저 없이 그냥 인스턴스로만
+사용합니다.
 
 ### 재현성
 
@@ -175,3 +204,11 @@ API 관련 코드가 없습니다.
   전달하지 않아서 보강 로직이 실제로는 항상 비활성 상태였습니다. `models.py`에 필드를
   추가하고 `cli.py`의 두 호출을 고친 뒤 배치를 재실행해서 50%→73%로 개선된 것을
   확인했습니다.
+- FastAPI 의존성 주입: `get_ctx`/`get_rules`/`get_db_path`를 `Depends`로 분리한 이유가
+  테스트 목적입니다 — 이거 없이 앱을 만들면 테스트에서도 매번 실제 2GB `LSWMD.pkl`을
+  로드해야 합니다. `app.dependency_overrides`로 가벼운 합성 데이터를 주입할 수 있게
+  했고, 실제로 이 설계 덕분에 API 테스트가 (실수로 `with TestClient`를 써서 진짜
+  lifespan을 트리거하기 전까지는) 수초 안에 끝납니다.
+- Pydantic 모델은 요청 바디(`GenerateRequest`, `ValidateRequest`)에만 쓰고 응답은 그냥
+  `dict`로 반환합니다 — 이벤트 스키마가 `models.py`의 dataclass로 이미 정의돼 있어
+  Pydantic으로 다시 정의하면 두 곳을 계속 동기화해야 했을 것입니다.
