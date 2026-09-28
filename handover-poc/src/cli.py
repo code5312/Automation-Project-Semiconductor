@@ -81,12 +81,21 @@ def build_event(scenario_id: str, seed: int, ctx: SamplingContext, rules: dict) 
         mode=vib_sig["mode"],
         rms=vib_sig["rms"],
         health_index=vib_sig["health_index"],
+        kurtosis=vib_sig.get("kurtosis"),
+        crest_factor=vib_sig.get("crest_factor"),
+        peak_to_peak=vib_sig.get("peak_to_peak"),
     )
 
     diag_result = diagnose(
         {"pattern": vision.pattern, "pattern_group": vision.pattern_group},
         {"anomaly_score": sensor.anomaly_score, "top_sensors": sensor_sig["top_sensors"]},
-        {"mode": vibration.mode, "rms": vibration.rms, "health_index": vibration.health_index},
+        {
+            "mode": vibration.mode,
+            "rms": vibration.rms,
+            "health_index": vibration.health_index,
+            "kurtosis": vibration.kurtosis,
+            "crest_factor": vibration.crest_factor,
+        },
         rules,
     )
     diagnosis = Diagnosis(**diag_result)

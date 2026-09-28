@@ -56,6 +56,9 @@ class VibrationSignal:
     mode: str  # "full_baseline" | "single_file"
     rms: float
     health_index: Optional[float]
+    kurtosis: Optional[float] = None
+    crest_factor: Optional[float] = None
+    peak_to_peak: Optional[float] = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

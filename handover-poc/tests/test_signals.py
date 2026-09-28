@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.ingest import loaders
 from src.ingest.wafer_mock import PATTERN_GROUPS, generate_wafer_map
 from src.ingest.wm811k import _normalize_label, sample_wafer_record
 from src.signals import sensor as sensor_mod
@@ -125,3 +126,37 @@ def test_vibration_full_baseline_mode_computes_health_index():
     assert signal["mode"] == "full_baseline"
     assert signal["health_index"] is not None
     assert signal["health_index"] > 0
+
+
+def test_vibration_single_file_mode_surfaces_kurtosis_and_crest_factor():
+    load_result = {
+        "mode": "single_file",
+        "files": ["f1"],
+        "rms_values": [0.2],
+        "stats_values": [{"rms": 0.2, "kurtosis": 4.5, "crest_factor": 6.0, "peak_to_peak": 1.0}],
+    }
+    signal = vibration_mod.extract_vibration_signal(load_result)
+    assert signal["health_index"] is None
+    assert signal["kurtosis"] == 4.5
+    assert signal["crest_factor"] == 6.0
+    assert signal["peak_to_peak"] == 1.0
+
+
+def test_channel_stats_gaussian_like_signal_is_near_baseline_kurtosis():
+    rng = np.random.RandomState(0)
+    col = rng.normal(0, 1, size=20000)
+    stats = loaders._channel_stats(col)
+    # Gaussian kurtosis is 3.0; a large random sample should land close to it.
+    assert 2.5 < stats["kurtosis"] < 3.5
+    assert stats["crest_factor"] > 1.0
+
+
+def test_channel_stats_impulsive_signal_has_higher_kurtosis_than_gaussian():
+    rng = np.random.RandomState(0)
+    gaussian = rng.normal(0, 1, size=20000)
+    impulsive = gaussian.copy()
+    impulsive[::500] += 20.0  # sparse large spikes -> impulsive/faulty-like signal
+    gaussian_stats = loaders._channel_stats(gaussian)
+    impulsive_stats = loaders._channel_stats(impulsive)
+    assert impulsive_stats["kurtosis"] > gaussian_stats["kurtosis"]
+    assert impulsive_stats["crest_factor"] > gaussian_stats["crest_factor"]

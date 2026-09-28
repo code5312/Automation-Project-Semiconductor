@@ -98,17 +98,34 @@ data/raw/
 
 ## 배치 실험 결과에 대한 솔직한 안내
 
-WM-811K를 실 데이터로 교체한 뒤에도 전체 정확도는 여전히 50%로 동일합니다 (`SC-PR`/`SC-UN`
-100%, `SC-EQ`/`SC-NG` 0%) — 예상된 결과입니다. 원인이 비전 데이터 품질이 아니라
-`single_file` 모드에서는 진동 신호가 판정에 전혀 기여하지 못하는 것(가중치 0.4가 항상
-빠짐)과, 591차원에서 상위 5개 센서의 |z| 평균이 정상 행에서도 꽤 크게 나오는 경향(차원이
-많을수록 극단값이 흔해지는 현상) 때문에 `R0`의 `sensor_low=0.3` 기준을 잘 넘기지 못하는
-것에 있기 때문입니다. `SC-EQ`(설비 기인)는 `score_min=0.6` 기준을 넘기기 어려워 대부분
-`R3`(YI로 넘김)로 떨어집니다. 이 결과는 숫자를 좋게 보이도록 조정하지 않고 그대로
-`output/experiments/confusion_matrix.csv`에 남겨두었습니다. 개선하려면
-`config/rules.yaml`의 `thresholds`(특히 `sensor_low`, `score_min`)나
+**진동 신호 보강(kurtosis/crest factor 기반 baseline-free 이상 점수, 아래 참고) 이후
+전체 정확도가 50% → 73%로 개선됐습니다**: `SC-EQ`(설비 기인) 100%, `SC-PR`(공정 기인)
+100%, `SC-UN`(원인 불명확) 92%, `SC-NG`(정상) 0%. `SC-EQ`는 이전에는 진동 신호가
+전혀 기여하지 못해(`health_index`가 항상 `None`) `score_min=0.6`을 못 넘기고 매번
+`R3`(YI로 넘김)로 떨어졌는데, kurtosis/crest_factor 기반 대체 신호가 그 자리를 메우면서
+100%로 올라갔습니다. `SC-UN`은 92%로 소폭 내려갔습니다 — 이제 진동이 실제로 점수에
+영향을 주다 보니, "원인 불명확" 시나리오 중 일부(4/50)가 P-ENG로 판정되는 경우가
+생겼습니다. 이는 신호가 더 정직해진 결과로 보고 그대로 남겨뒀습니다.
+
+`SC-NG`(정상)는 여전히 0%입니다 — 이건 진동과 무관하게, 591차원에서 상위 5개 센서의
+|z| 평균이 정상 행에서도 꽤 크게 나오는 경향(차원이 많을수록 극단값이 흔해지는 현상)
+때문에 `R0`의 `sensor_low=0.3` 기준을 넘기지 못하는 것이 원인입니다. 이 결과는 숫자를
+좋게 보이도록 조정하지 않고 그대로 `output/experiments/confusion_matrix.csv`에
+남겨두었습니다. 개선하려면 `config/rules.yaml`의 `thresholds`(특히 `sensor_low`)나
 `src/signals/sensor.py`의 `method`(예: `isolation_forest`로 전환)를 조정하는 것이
-근본적인 해결책입니다 (진동은 단일 파일 모드가 영구 설계이므로 더 이상 옵션이 아닙니다).
+다음 개선 후보입니다.
+
+### 진동 신호 보강 상세
+
+`single_file` 모드에서는 여러 파일에 걸친 기준선(baseline)을 계산할 수 없어
+`health_index`가 항상 `None`이지만, 파일 하나(20480개 샘플)만으로도 계산할 수 있는
+**baseline-free 통계**가 있습니다 — 정상적인(건강한) 베어링 진동은 대략 가우시안 분포에
+가까워 **kurtosis ≈ 3, crest factor(피크/RMS) ≈ 3~4** 부근이고, 마모·충격성 결함이
+생기면 신호가 임펄시브해지면서 두 값 모두 올라가는 것이 진동 분석 분야에서 널리 쓰이는
+결함 지표입니다 (`src/ingest/loaders.py`의 `_channel_stats`, `src/diagnosis/engine.py`의
+`_kurtosis_crest_abnormality`). `health_index`가 있으면 그걸 우선 쓰고, 없을 때만 이
+대체 신호를 쓰며, 둘 다 없을 때만 기여도를 0으로 둡니다 — 이 판단 경로는 항상
+`diagnosis.notes`에 남습니다.
 
 ## 진행하면서 판단한 세부사항
 
@@ -128,3 +145,11 @@ WM-811K를 실 데이터로 교체한 뒤에도 전체 정확도는 여전히 50
 - WM-811K 목업(`wafer_mock.py`)은 삭제하지 않고 유지했습니다 — 거대한 `LSWMD.pkl` 없이도
   `tests/test_signals.py`가 빠르게 돌 수 있어야 해서, 실 데이터 경로(`wm811k.py`)와는
   별도로 테스트/오프라인 개발용 픽스처로 남겨뒀습니다.
+- `weights.equipment.vibration_hi` → `vibration_abnormal`로 이름을 바꿨습니다 — "hi"가
+  `health_index`를 뜻했는데, 이제는 kurtosis/crest_factor 대체 신호로 채워지는 경우가
+  대부분이라 예전 이름이 오해를 줄 수 있었습니다.
+- 구현 중 버그를 하나 발견해서 고쳤습니다: `signals/vibration.py`는 kurtosis/crest_factor를
+  계산해서 반환했지만, `cli.py`가 그 값을 `models.VibrationSignal`과 `diagnose()` 호출에
+  전달하지 않아서 보강 로직이 실제로는 항상 비활성 상태였습니다. `models.py`에 필드를
+  추가하고 `cli.py`의 두 호출을 고친 뒤 배치를 재실행해서 50%→73%로 개선된 것을
+  확인했습니다.

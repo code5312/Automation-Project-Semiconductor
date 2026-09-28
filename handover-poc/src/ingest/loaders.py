@@ -49,16 +49,42 @@ def load_secom(path: str | Path) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def _load_one_vibration_file(path: Path, channel: int) -> float:
+def _channel_stats(col: np.ndarray) -> dict:
+    """Time-domain stats for one vibration channel, computable from a single
+    file (no cross-file baseline needed). kurtosis here is the raw (Pearson)
+    kurtosis, ~3.0 for Gaussian noise; crest_factor is peak/RMS. Both rise
+    for impulsive signals, which is the standard baseline-free indicator of
+    a developing bearing fault in the vibration-analysis literature.
+    """
+    rms = float(np.sqrt(np.mean(np.square(col))))
+    mean = float(np.mean(col))
+    std = float(np.std(col))
+    peak = float(np.max(np.abs(col)))
+    centered = col - mean
+    m2 = float(np.mean(centered**2))
+    m4 = float(np.mean(centered**4))
+    kurtosis = m4 / (m2**2) if m2 > 0 else float("nan")
+    crest_factor = peak / rms if rms > 0 else float("nan")
+    return {
+        "rms": rms,
+        "std": std,
+        "peak": peak,
+        "peak_to_peak": float(np.max(col) - np.min(col)),
+        "crest_factor": crest_factor,
+        "kurtosis": kurtosis,
+    }
+
+
+def _load_one_vibration_file(path: Path, channel: int) -> dict:
     data = np.loadtxt(path)
     if data.ndim != 2 or data.shape[1] < channel:
         raise ValueError(f"Unexpected vibration file shape {data.shape} in {path}")
-    col = data[:, channel - 1]
-    return float(np.sqrt(np.mean(np.square(col))))
+    return _channel_stats(data[:, channel - 1])
 
 
 def load_vibration_rms(path: str | Path, channel: int = 1) -> dict:
-    """Compute RMS of one channel for one or many NASA IMS bearing files.
+    """Compute RMS and other time-domain stats of one channel for one or
+    many NASA IMS bearing files.
 
     `path` may be a single file or a directory of files (sorted by filename,
     which is also the timestamp, to preserve order). Either way: if exactly
@@ -79,13 +105,13 @@ def load_vibration_rms(path: str | Path, channel: int = 1) -> dict:
         if not files:
             raise ValueError(f"No vibration files found in directory: {path}")
 
-    rms_values = [_load_one_vibration_file(f, channel) for f in files]
+    stats_values = [_load_one_vibration_file(f, channel) for f in files]
+    rms_values = [s["rms"] for s in stats_values]
 
-    if len(files) == 1:
-        return {"mode": "single_file", "files": [files[0].name], "rms_values": rms_values}
-
+    mode = "single_file" if len(files) == 1 else "full_baseline"
     return {
-        "mode": "full_baseline",
+        "mode": mode,
         "files": [f.name for f in files],
         "rms_values": rms_values,
+        "stats_values": stats_values,
     }

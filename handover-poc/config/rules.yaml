@@ -5,20 +5,31 @@
 
 weights:
   equipment:
-    edge_pattern: 0.4    # vision.pattern_group == "edge"
-    vibration_hi: 0.4    # normalized health_index (0 if unavailable)
-    sensor_normal: 0.2   # 1 - sensor.anomaly_score
+    edge_pattern: 0.4       # vision.pattern_group == "edge"
+    vibration_abnormal: 0.4 # normalized health_index, or kurtosis/crest_factor fallback (0 if neither available)
+    sensor_normal: 0.2      # 1 - sensor.anomaly_score
   process:
-    center_pattern: 0.3  # vision.pattern_group == "center"
-    sensor_anomaly: 0.5  # sensor.anomaly_score
-    vibration_normal: 0.2  # 1 - |normalized health_index| (0 if unavailable)
+    center_pattern: 0.3     # vision.pattern_group == "center"
+    sensor_anomaly: 0.5     # sensor.anomaly_score
+    vibration_normal: 0.2   # 1 - vibration_abnormal component above (0 if neither available)
 
 thresholds:
-  hi_cap: 6           # health_index is divided by this to normalize into [0,1]
-  hi_normal_max: 1.0  # |health_index| <= this counts as "within baseline range"
+  hi_cap: 6           # health_index is divided by this to normalize into [0,1] (full_baseline mode only)
+  hi_normal_max: 1.0  # |health_index| <= this counts as "within baseline range" (full_baseline mode only)
   sensor_low: 0.3     # anomaly_score below this counts as "low" (R0)
   score_min: 0.6      # R2: winning hypothesis score must be >= this
   score_gap_min: 0.15 # R2: winning hypothesis must lead 2nd place by >= this
+
+  # single_file mode has no cross-file baseline, so health_index is always
+  # None there; these normalize the baseline-free kurtosis/crest_factor
+  # fallback instead (see diagnosis/engine.py's _kurtosis_crest_abnormality).
+  # *_baseline = typical value for a healthy/Gaussian signal; *_cap = value
+  # at/above which the signal counts as clearly impulsive (fully abnormal).
+  kurtosis_baseline: 3.0
+  kurtosis_cap: 6.0
+  crest_factor_baseline: 4.0
+  crest_factor_cap: 8.0
+  abnormality_low_max: 0.3  # kurtosis/crest_factor abnormality <= this counts as "calm" (R0)
 
 depts:
   equipment: M-ENG
