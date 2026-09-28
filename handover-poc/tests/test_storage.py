@@ -86,6 +86,37 @@ def test_list_events_respects_limit(tmp_path):
     assert len(repository.list_events(db_path, limit=2)) == 2
 
 
+def test_list_events_with_status_falls_back_to_primary_dept(tmp_path):
+    db_path = tmp_path / "handover.db"
+    repository.save_event(db_path, _sample_event("EVT-1", primary_dept="YI"))
+
+    rows = repository.list_events_with_status(db_path)
+    assert len(rows) == 1
+    assert rows[0]["current_dept"] == "YI"
+    assert rows[0]["pingpong_count"] == 0
+
+
+def test_list_events_with_status_reflects_handovers(tmp_path):
+    db_path = tmp_path / "handover.db"
+    repository.save_event(db_path, _sample_event("EVT-1", primary_dept="YI"))
+    repository.add_handover(db_path, "EVT-1", "M-ENG", "step 1")
+    repository.add_handover(db_path, "EVT-1", "P-ENG", "step 2")
+
+    rows = repository.list_events_with_status(db_path)
+    assert rows[0]["current_dept"] == "P-ENG"
+    assert rows[0]["pingpong_count"] == 2
+
+
+def test_list_events_with_status_filters_by_current_dept(tmp_path):
+    db_path = tmp_path / "handover.db"
+    repository.save_event(db_path, _sample_event("EVT-1", primary_dept="YI"))
+    repository.save_event(db_path, _sample_event("EVT-2", primary_dept="P-ENG"))
+    repository.add_handover(db_path, "EVT-1", "M-ENG", "reassigned")
+
+    rows = repository.list_events_with_status(db_path, current_dept="M-ENG")
+    assert {r["event_id"] for r in rows} == {"EVT-1"}
+
+
 def test_migrate_json_dir_persists_all_files(tmp_path):
     json_dir = tmp_path / "events"
     json_dir.mkdir()

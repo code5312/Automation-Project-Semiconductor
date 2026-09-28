@@ -10,8 +10,40 @@ from pathlib import Path
 from typing import Optional
 
 from src.cli import build_event, load_rules
-from src.scenarios.catalog import build_sampling_context
+from src.scenarios.catalog import SamplingContext, build_sampling_context
 from src.storage import repository as repo
+
+
+def compute_batch_results(ctx: SamplingContext, rules: dict, seeds: int) -> dict:
+    """Generate scenarios x seeds events in-memory (no disk/DB writes) and
+    score them. Used by both run_batch() below (which additionally persists
+    to disk/DB) and the dashboard's live rule-tuning page, which needs a
+    fast, side-effect-free preview of a candidate config/rules.yaml."""
+    scenario_ids = list(ctx.scenarios.keys())
+    events = []
+    confusion: Counter = Counter()
+    per_scenario_correct: Counter = Counter()
+    per_scenario_total: Counter = Counter()
+
+    for scenario_id in scenario_ids:
+        expected = ctx.scenarios[scenario_id]["expected_dept"]
+        for seed in range(seeds):
+            event = build_event(scenario_id, seed, ctx, rules)
+            events.append(event)
+
+            predicted = event["diagnosis"]["primary_dept"]
+            confusion[(str(expected), str(predicted))] += 1
+            per_scenario_total[scenario_id] += 1
+            if predicted == expected:
+                per_scenario_correct[scenario_id] += 1
+
+    return {
+        "scenario_ids": scenario_ids,
+        "events": events,
+        "confusion": confusion,
+        "per_scenario_correct": per_scenario_correct,
+        "per_scenario_total": per_scenario_total,
+    }
 
 
 def run_batch(seeds: int, out_dir: Path, db_path: Optional[str] = None) -> None:
@@ -21,34 +53,25 @@ def run_batch(seeds: int, out_dir: Path, db_path: Optional[str] = None) -> None:
 
     rules = load_rules()
     ctx = build_sampling_context()
-    scenario_ids = list(ctx.scenarios.keys())
+    result = compute_batch_results(ctx, rules, seeds)
+    scenario_ids = result["scenario_ids"]
 
-    confusion: Counter = Counter()
-    per_scenario_correct: Counter = Counter()
-    per_scenario_total: Counter = Counter()
-
-    for scenario_id in scenario_ids:
-        expected = ctx.scenarios[scenario_id]["expected_dept"]
-        for seed in range(seeds):
-            event = build_event(scenario_id, seed, ctx, rules)
-            with open(events_dir / f"{event['event_id']}.json", "w", encoding="utf-8") as f:
-                json.dump(event, f, indent=2, ensure_ascii=False)
-            if db_path is not None:
-                repo.save_event(db_path, event)
-
-            predicted = event["diagnosis"]["primary_dept"]
-            confusion[(str(expected), str(predicted))] += 1
-            per_scenario_total[scenario_id] += 1
-            if predicted == expected:
-                per_scenario_correct[scenario_id] += 1
+    for event in result["events"]:
+        with open(events_dir / f"{event['event_id']}.json", "w", encoding="utf-8") as f:
+            json.dump(event, f, indent=2, ensure_ascii=False)
+        if db_path is not None:
+            repo.save_event(db_path, event)
 
     csv_path = out_dir / "confusion_matrix.csv"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         f.write("expected_dept,predicted_dept,count\n")
-        for (expected, predicted), count in sorted(confusion.items(), key=lambda kv: str(kv[0])):
+        for (expected, predicted), count in sorted(result["confusion"].items(), key=lambda kv: str(kv[0])):
             f.write(f"{expected},{predicted},{count}\n")
 
+    per_scenario_total = result["per_scenario_total"]
+    per_scenario_correct = result["per_scenario_correct"]
     total_events = sum(per_scenario_total.values())
+
     print(f"Wrote {total_events} events to {events_dir}")
     if db_path is not None:
         print(f"Saved {total_events} events to {db_path}")

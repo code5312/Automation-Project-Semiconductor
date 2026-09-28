@@ -162,6 +162,52 @@ def count_events(db_path: str | Path) -> int:
     return row[0] if row else 0
 
 
+def list_events_with_status(
+    db_path: str | Path,
+    scenario_id: Optional[str] = None,
+    current_dept: Optional[str] = None,
+    limit: int = 500,
+) -> list[dict]:
+    """Lightweight rows (not full event JSON) for dashboard tables: each
+    event plus its *current* department (latest handover's to_dept, or its
+    original primary_dept if never handed over) and pingpong_count, computed
+    with correlated subqueries rather than N+1 Python-side calls."""
+    init_db(db_path)
+    query = """
+        SELECT * FROM (
+            SELECT
+                e.event_id AS event_id,
+                e.scenario_id AS scenario_id,
+                e.rule_id AS rule_id,
+                e.primary_dept AS primary_dept,
+                e.mfg_hold AS mfg_hold,
+                e.event_time AS event_time,
+                COALESCE(
+                    (SELECT h.to_dept FROM handovers h
+                     WHERE h.event_id = e.event_id ORDER BY h.id DESC LIMIT 1),
+                    e.primary_dept
+                ) AS current_dept,
+                (SELECT COUNT(*) FROM handovers h2 WHERE h2.event_id = e.event_id) AS pingpong_count
+            FROM events e
+        ) AS s
+        WHERE 1=1
+    """
+    params: list = []
+    if scenario_id is not None:
+        query += " AND scenario_id = ?"
+        params.append(scenario_id)
+    if current_dept is not None:
+        query += " AND current_dept = ?"
+        params.append(current_dept)
+    query += " ORDER BY event_time DESC LIMIT ?"
+    params.append(limit)
+
+    with _connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_handovers(db_path: str | Path, event_id: str) -> list[dict]:
     """Handover history for one event, oldest first."""
     init_db(db_path)

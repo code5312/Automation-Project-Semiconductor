@@ -5,8 +5,8 @@
 세 개의 공개 데이터셋(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 하나의
 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인을 판정해 주관 부서(M-ENG/P-ENG/YI)를
 제안하는 시스템의 프로토타입입니다. 핵심 로직(ingest/signals/scenarios/diagnosis)은
-순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI·부서 간 인수인계("핑퐁") 추적이 모두 그
-위에 얇게 얹혀 있습니다. 대시보드·PDF·LLM 요약은 다음 단계입니다.
+순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI·부서 간 인수인계("핑퐁") 추적·Streamlit
+대시보드가 모두 그 위에 얇게 얹혀 있습니다. PDF·LLM 요약은 다음 단계입니다.
 
 ## 데이터 상태 (중요)
 
@@ -154,6 +154,70 @@ API: `POST /events/{event_id}/handovers` (`{"to_dept": "...", "reason": "..."}`)
 첫 재할당의 `from_dept`는 이벤트의 원래 `primary_dept`에서 자동으로 채워지고, 그 다음부터는
 직전 `to_dept`에서 이어집니다.
 
+## 대시보드 (Streamlit)
+
+```bash
+./.venv/Scripts/python.exe -m streamlit run src/dashboard/app.py
+```
+
+4개 페이지(`src/dashboard/pages/`)로 구성되어 있고, FastAPI 서버를 따로 띄우지 않고
+`src.storage.repository`/`src.cli.build_event`를 CLI/API와 동일하게 직접 호출합니다
+(이 PoC는 단일 머신이라 HTTP 홉을 추가하지 않는 쪽을 선택했습니다).
+
+| 페이지 | 내용 |
+| --- | --- |
+| ① 이벤트 목록 | 조회/필터 + 새 이벤트 생성 |
+| ② 이벤트 상세 | 신호·판정 근거(scores/contributions)·핑퐁 이력, 재할당 기록 폼 |
+| ③ 부서 현황 | 부서별 현재 담당 건수, 핑퐁 랭킹 (`repository.list_events_with_status`) |
+| ④ 규칙 튜닝 | 가중치/임계값을 슬라이더로 바꿔보고 `experiments.compute_batch_results`로 즉시 정확도·혼동행렬 미리보기 — **파일에는 저장되지 않음** (주석 있는 `rules.yaml`을 자동 덮어쓰지 않기 위한 설계) |
+
+### 디자인
+
+`dataviz` 스킬의 검증된 팔레트(`references/palette.md`)를 그대로 가져와 씁니다:
+
+- `.streamlit/config.toml`에 팔레트의 파란색(`#2a78d6`)·중립 표면색을 테마로 지정
+- 부서(YI/MFG/M-ENG/P-ENG) 배지 색은 팔레트의 카테고리 1~4번 슬롯(파랑/주황/아쿠아/노랑)에
+  **고정 순서로** 매핑(`src/dashboard/common.py`의 `DEPT_COLORS`) — 같은 부서는 어느
+  페이지에서든 같은 색으로 보입니다. `st.dataframe` 셀 안에서는 HTML 배지를 쓸 수 없어서
+  같은 매핑을 색깔 원 이모지(🔵🟠🟢🟡)로도 반복합니다.
+- `st.container(border=True)`로 섹션을 카드처럼 구분하고, `inject_theme()`(공용 CSS)로
+  메트릭 카드에 테두리·여백을 통일
+- 핑퐁 이력은 표 대신 카드형 타임라인으로, 혼동행렬은 `pivot_table`로 행렬 형태로 표시
+
+### 발견한 버그 1: 페이지를 직접 실행하면 `ModuleNotFoundError: No module named 'src'`
+
+`streamlit run src/dashboard/app.py`를 프로젝트 루트에서 실행하면 문제없이 동작하지만
+(`-m streamlit`이 cwd를 `sys.path[0]`에 넣어줌), 각 페이지 파일을 다른 방식으로 직접
+실행하면(예: 테스트 스크립트, 다른 cwd) 실패할 수 있다는 걸 실데이터 스모크 테스트로
+찾았습니다. 처음엔 이 sys.path 보정 코드를 `common.py`에 넣었는데, 이건 아무 효과가
+없습니다 — 페이지가 `from src.dashboard.common import ...`를 실행하는 순간 이미 `src`를
+못 찾아 실패하고, `common.py` 안의 코드는 그 시점엔 아직 실행조차 안 됐기 때문입니다
+(닭과 달걀 문제). 그래서 각 페이지 파일 맨 위, 첫 `from src...` import보다 먼저
+`sys.path.insert(...)`를 반복해서 넣는 방식으로 고쳤습니다.
+
+### 발견한 버그 2: `app.py`가 `pages/`보다 한 단계 얕다는 걸 놓침
+
+대시보드 디자인을 다시 손보면서 `app.py`에도 처음으로 `from src.dashboard.common import
+...`를 추가했는데, 버그 1의 수정 코드를 그대로 복사하면서 `parents[3]`도 같이 복사했습니다.
+문제는 `app.py`는 `src/dashboard/app.py`로 프로젝트 루트에서 **2단계** 아래인데
+(`pages/*.py`는 3단계), `parents[3]`은 프로젝트 루트를 지나 그 **부모 폴더**(`src`가 없는
+곳)를 가리켜서 조용히 틀린 경로를 넣고 있었습니다. `streamlit run`으로 프로젝트 루트에서
+실행하면 `-m streamlit`이 cwd를 이미 `sys.path[0]`에 넣어줘서 버그가 가려졌지만, 실데이터
+스모크 테스트(`AppTest`를 pytest 밖에서 직접 실행)에서 다시 걸렸습니다. `parents[2]`로
+고쳤고, `tests/test_dashboard.py`에 이 정확한 depth 계산을 검증하는 회귀 테스트
+(`test_every_dashboard_script_has_a_correct_sys_path_bootstrap`)를 추가했습니다 — 이번엔
+"다른 sys.path 항목이 우연히 가려주는" 상황에 기대지 않고, 5개 스크립트 각각의
+`parents[N]`이 실제로 프로젝트 루트로 resolve되는지 파일시스템으로 직접 확인합니다.
+
+### 테스트에서 실데이터 없이 페이지를 검증하는 방법
+
+`tests/test_dashboard.py`는 `streamlit.testing.v1.AppTest`로 각 페이지 스크립트를
+실제로 실행시켜 예외를 잡습니다 (HTTP로 껍데기만 확인하는 것과 다름). `src.dashboard.common`의
+캐시된 로더를 패치해서 합성 데이터로 돌리므로 실데이터 없이도 빠르게 (몇 초 안에) 돌아갑니다.
+위의 sys.path 버그는 이 pytest 테스트로는 못 잡았습니다 — pytest 자체가 이미 프로젝트
+루트를 `sys.path`에 넣어두기 때문입니다. 실제로 이 버그를 잡은 건 `AppTest.from_file()`을
+pytest 밖에서 독립 스크립트로 직접 돌려본 실데이터 스모크 테스트였습니다.
+
 ## 테스트
 
 ```bash
@@ -164,8 +228,9 @@ API: `POST /events/{event_id}/handovers` (`{"to_dept": "...", "reason": "..."}`)
 그룹, 센서 정상/이상, 진동 두 모드 + kurtosis/crest_factor), `tests/test_diagnosis.py`
 (R0~R3 각 1회 이상, `health_index=None`/kurtosis 대체 처리), `tests/test_storage.py`
 (SQLite CRUD·필터·마이그레이션), `tests/test_api.py`(FastAPI 엔드포인트, 합성 데이터로
-격리), `tests/test_handover.py`(핑퐁 검증 규칙 + DB 이력 체이닝)로 구성되어 있습니다.
-`tests/conftest.py`에 실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
+격리), `tests/test_handover.py`(핑퐁 검증 규칙 + DB 이력 체이닝), `tests/test_dashboard.py`
+(`AppTest`로 Streamlit 페이지 4개 + 홈 실제 실행)로 구성되어 있습니다. `tests/conftest.py`에
+실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
 
 ## 배치 실험 결과에 대한 솔직한 안내
 
@@ -245,3 +310,12 @@ API: `POST /events/{event_id}/handovers` (`{"to_dept": "...", "reason": "..."}`)
   넣었습니다 — 판정 엔진은 원인을 equipment/process 두 가설로만 나누기 때문에 MFG가 주관
   부서로 나올 일이 없지만, 실제 핑퐁 흐름에서는 R1의 MFG Hold 이후 MFG도 개입할 수 있어서
   핑퐁 대상 부서로는 유효해야 합니다.
+- 대시보드는 FastAPI를 거치지 않고 `repository`/`build_event`를 직접 호출합니다 — 이 PoC는
+  한 대의 머신에서 CLI/API/대시보드가 모두 돌아가는 전제라, HTTP 홉을 추가하는 것보다
+  같은 순수 함수를 재사용하는 쪽이 더 단순합니다. 여러 머신으로 나뉘면
+  `src/dashboard/common.py`의 두 함수만 `requests` 호출로 바꾸면 됩니다.
+- 차트는 `st.bar_chart`만 사용하고 plotly/matplotlib은 추가하지 않았습니다 — 이 정도
+  집계(부서별 건수)에는 Streamlit 내장 차트로 충분해서 의존성을 늘릴 이유가 없었습니다.
+- 규칙 튜닝 페이지는 슬라이더 값을 `config/rules.yaml`에 저장하는 기능을 일부러 넣지
+  않았습니다 — 그 파일은 각 값의 의미를 설명하는 주석이 많은데, `yaml.dump`로 덮어쓰면
+  주석이 전부 사라집니다. 미리보기만 제공하고 값 복사는 사람이 하도록 남겨뒀습니다.
