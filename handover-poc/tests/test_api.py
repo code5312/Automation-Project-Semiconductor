@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -158,3 +160,30 @@ def test_report_pdf_returns_valid_pdf_bytes(client):
 def test_report_pdf_for_unknown_event_returns_404(client):
     resp = client.get("/events/EVT-nope/report.pdf")
     assert resp.status_code == 404
+
+
+def test_summary_endpoint_returns_llm_text(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event_id = gen.json()["event_id"]
+
+    with patch("src.api.main.summarize_diagnosis", return_value="요약문입니다.") as mock_summarize:
+        resp = client.get(f"/events/{event_id}/summary")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"event_id": event_id, "summary": "요약문입니다."}
+    mock_summarize.assert_called_once()
+
+
+def test_summary_endpoint_for_unknown_event_returns_404(client):
+    resp = client.get("/events/EVT-nope/summary")
+    assert resp.status_code == 404
+
+
+def test_summary_endpoint_returns_503_on_auth_failure(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event_id = gen.json()["event_id"]
+
+    with patch("src.api.main.summarize_diagnosis", side_effect=RuntimeError("ANTHROPIC_API_KEY missing")):
+        resp = client.get(f"/events/{event_id}/summary")
+
+    assert resp.status_code == 503

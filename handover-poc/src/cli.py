@@ -8,6 +8,7 @@
     python -m src.cli handover --event-id EVT-xxxx --to M-ENG --reason "..."
     python -m src.cli history --event-id EVT-xxxx
     python -m src.cli report --event-id EVT-xxxx --out output/reports/
+    python -m src.cli summarize --event-id EVT-xxxx
 """
 import json
 import random
@@ -21,6 +22,7 @@ import yaml
 
 from src.diagnosis.engine import diagnose
 from src.ingest import validate as validate_mod
+from src.llm.summarize import summarize_diagnosis
 from src.models import Diagnosis, Event, SensorSignal, TopSensor, VibrationSignal, VisionSignal
 from src.report.pdf import generate_handover_pdf
 from src.scenarios.catalog import SamplingContext, build_sampling_context, sample
@@ -274,6 +276,22 @@ def report(event_id: str, db: str, out: str) -> None:
     out_path = Path(out) / f"{event_id}.pdf"
     generate_handover_pdf(event, handovers, out_path)
     click.echo(f"Wrote {out_path}")
+
+
+@cli.command()
+@click.option("--event-id", required=True)
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(exists=True), help="SQLite database path")
+def summarize(event_id: str, db: str) -> None:
+    """Print an LLM-generated Korean summary of one event's diagnosis (calls the Claude API)."""
+    event = repo.get_event(db, event_id)
+    if event is None:
+        raise click.ClickException(f"Unknown event_id: {event_id}")
+    handovers = repo.list_handovers(db, event_id)
+
+    try:
+        click.echo(summarize_diagnosis(event, handovers))
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
 
 
 if __name__ == "__main__":

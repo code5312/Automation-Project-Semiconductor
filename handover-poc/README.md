@@ -181,6 +181,36 @@ Windows/Linux/macOS 순서로 흔한 설치 경로를 찾고, 못 찾으면 CID 
 정상 실행된다고 결과물까지 정상이라고 가정하면 안 된다는 걸 다시 확인한 사례라
 남겨둡니다 — 대시보드 sys.path 버그를 잡을 때와 같은 교훈입니다.
 
+## LLM 요약 (Claude API)
+
+이벤트의 판정 근거(rule_id·scores·contributions·notes)와 핑퐁 이력을 실무자가 바로 읽을
+수 있는 한국어 요약으로 바꿔줍니다 (`src/llm/summarize.py`, Claude API, 모델
+`claude-opus-5`). 시스템 프롬프트에 이 프로젝트의 원칙을 그대로 강제합니다 —
+"판정 점수"를 "확률"/"신뢰도"라고 부르지 말 것, 시뮬레이션 데이터임을 숨기지 말 것, 주어진
+근거 밖의 원인을 추측하지 말 것.
+
+```bash
+# CLI (ANTHROPIC_API_KEY 필요)
+./.venv/Scripts/python.exe -m src.cli summarize --event-id EVT-xxxx
+```
+
+API: `GET /events/{event_id}/summary` → `{"event_id", "summary"}` (인증 실패 시 503).
+대시보드 "이벤트 상세" 페이지에는 "🤖 AI 요약" 카드로 붙어 있습니다.
+
+인증은 SDK가 알아서 처리하도록 두었습니다 (`ANTHROPIC_API_KEY` 환경변수 또는
+`ant auth login` 프로필) — `os.environ`을 직접 검사하지 않습니다. 키가 없어도 "인증
+실패"가 아니라는 뜻일 수 있기 때문입니다 (다른 자격증명 경로가 있을 수 있음). 인증
+실패는 `anthropic.AuthenticationError`를 잡아서 사람이 읽을 수 있는 `RuntimeError`로
+바꿔 CLI(`ClickException`)/API(503)/대시보드(`st.warning`) 각자의 방식으로 보여줍니다.
+
+**테스트는 전부 모킹입니다** — `tests/test_summarize.py`/`test_api.py`/`test_dashboard.py`
+어디에서도 실제 Claude API를 호출하지 않습니다 (비용·네트워크 의존성 방지, 이 프로젝트의
+다른 외부 의존성 처리 방식과 동일). 이 환경에는 `ANTHROPIC_API_KEY`가 없어서 실제
+API 요청 형식(`model`, `output_config` 등)이 라이브 서버에 정확히 맞는지는 검증하지
+못했습니다 — 모킹 테스트가 통과한다고 실제 API 호출이 성공한다는 보장은 아닙니다. 키가
+준비되면 `python -m src.cli summarize --event-id ...`로 한 번 실행해 확인하는 걸
+권장합니다.
+
 ## 대시보드 (Streamlit)
 
 ```bash
@@ -256,8 +286,9 @@ pytest 밖에서 독립 스크립트로 직접 돌려본 실데이터 스모크 
 (R0~R3 각 1회 이상, `health_index=None`/kurtosis 대체 처리), `tests/test_storage.py`
 (SQLite CRUD·필터·마이그레이션), `tests/test_api.py`(FastAPI 엔드포인트, 합성 데이터로
 격리), `tests/test_handover.py`(핑퐁 검증 규칙 + DB 이력 체이닝), `tests/test_dashboard.py`
-(`AppTest`로 Streamlit 페이지 4개 + 홈 실제 실행, PDF 다운로드 버튼 포함), `tests/test_report.py`
-(PDF 생성 — 매직 바이트, 빈 이력/`primary_dept=None` 처리)로 구성되어 있습니다.
+(`AppTest`로 Streamlit 페이지 4개 + 홈 실제 실행, PDF/AI 요약 버튼 포함), `tests/test_report.py`
+(PDF 생성 — 매직 바이트, 빈 이력/`primary_dept=None` 처리), `tests/test_summarize.py`
+(Claude API 클라이언트를 모킹 — 실제 네트워크 호출 없음)로 구성되어 있습니다.
 `tests/conftest.py`에 실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
 
 ## 배치 실험 결과에 대한 솔직한 안내

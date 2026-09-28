@@ -11,6 +11,7 @@ import streamlit as st
 
 from src.dashboard.common import dept_badge, get_db_path, inject_theme
 from src.handover.tracker import VALID_DEPTS
+from src.llm.summarize import summarize_diagnosis
 from src.report.pdf import generate_handover_pdf
 from src.storage import repository as repo
 
@@ -91,6 +92,20 @@ with col2:
             st.write("**_notes** (샘플링 시 스킵된 조건 등):")
             for n in event["_notes"]:
                 st.caption(f"— {n}")
+
+st.write("")
+with st.container(border=True):
+    st.subheader("🤖 AI 요약")
+    st.caption("Claude API로 위 판정 근거를 실무자용 한국어 요약으로 정리합니다 (판정 자체를 바꾸지 않음).")
+    summary_key = f"summary_{event_id}"
+    if st.button("요약 생성", key="summary_button"):
+        try:
+            with st.spinner("요약 생성 중..."):
+                st.session_state[summary_key] = summarize_diagnosis(event, history)
+        except RuntimeError as e:
+            st.warning(str(e))
+    if summary_key in st.session_state:
+        st.write(st.session_state[summary_key])
 
 st.write("")
 st.divider()

@@ -124,9 +124,11 @@ def _seed_event(tmp_path, event_id: str = "EVT-TEST-1", primary_dept: str = "M-E
 def test_event_detail_page_renders_valid_event_with_pdf_download_button(tmp_path):
     """This is the only test that actually reaches src/report/pdf.py's
     generate_handover_pdf() call inside the page -- the unknown-event-id
-    test above stops before that point (st.stop() on a missing event)."""
+    test above stops before that point (st.stop() on a missing event).
+    Rendering the PDF on every rerun is slow enough to occasionally miss
+    AppTest's default 3s timeout, so this one gets a longer budget."""
     event_id = _seed_event(tmp_path)
-    at = AppTest.from_file(str(DASHBOARD_DIR / "pages" / "2_이벤트_상세.py"))
+    at = AppTest.from_file(str(DASHBOARD_DIR / "pages" / "2_이벤트_상세.py"), default_timeout=15)
     at.run()
     at.text_input[0].set_value(event_id).run()
 
@@ -134,6 +136,23 @@ def test_event_detail_page_renders_valid_event_with_pdf_download_button(tmp_path
     assert len(at.download_button) == 1
     assert at.download_button[0].proto.label == "📄 PDF 다운로드"
     assert any(event_id in md.value for md in at.markdown)
+
+
+def test_event_detail_page_ai_summary_button_calls_llm_and_shows_result(tmp_path):
+    event_id = _seed_event(tmp_path)
+    at = AppTest.from_file(str(DASHBOARD_DIR / "pages" / "2_이벤트_상세.py"), default_timeout=15)
+    at.run()
+    at.text_input[0].set_value(event_id).run()
+
+    # The page does `from src.llm.summarize import summarize_diagnosis` at
+    # module level; AppTest re-execs the whole script (including imports)
+    # on every .run(), so patching the source module before the next
+    # .run() call is picked up by that fresh import.
+    with patch("src.llm.summarize.summarize_diagnosis", return_value="요약문입니다."):
+        at.button[0].click().run()
+
+    assert not at.exception
+    assert any("요약문입니다." in md.value for md in at.markdown)
 
 
 def test_dept_status_page_loads_with_empty_state():
