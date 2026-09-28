@@ -14,6 +14,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.dashboard import common
+from src.storage import repository as repo
 from tests.conftest import FAKE_RULES, build_fake_ctx
 
 # AppTest.from_file() resolves relative paths against the caller file's own
@@ -88,6 +89,51 @@ def test_event_detail_page_shows_error_for_unknown_event_id():
     at.text_input[0].set_value("EVT-does-not-exist").run()
     assert not at.exception
     assert any("찾을 수 없습니다" in e.value for e in at.error)
+
+
+def _seed_event(tmp_path, event_id: str = "EVT-TEST-1", primary_dept: str = "M-ENG") -> str:
+    db_path = tmp_path / "dashboard.db"
+    event = {
+        "event_id": event_id,
+        "scenario_id": "SC-EQ",
+        "seed": 1,
+        "is_simulated": True,
+        "event_time": "2026-01-01T00:00:00+00:00",
+        "signals": {
+            "vision": {"pattern_group": "edge", "pattern": "Edge-Ring"},
+            "sensor": {"anomaly_score": 0.42},
+            "vibration": {
+                "mode": "single_file", "rms": 0.1, "health_index": None,
+                "kurtosis": 4.0, "crest_factor": 6.0,
+            },
+        },
+        "diagnosis": {
+            "rule_id": "R2",
+            "primary_dept": primary_dept,
+            "secondary_depts": ["P-ENG"],
+            "mfg_hold": True,
+            "scores": {"equipment": 0.7, "process": 0.2},
+            "contributions": {"equipment": {"edge_pattern": 0.4}, "process": {"sensor_anomaly": 0.2}},
+            "notes": [],
+        },
+    }
+    repo.save_event(db_path, event)
+    return event_id
+
+
+def test_event_detail_page_renders_valid_event_with_pdf_download_button(tmp_path):
+    """This is the only test that actually reaches src/report/pdf.py's
+    generate_handover_pdf() call inside the page -- the unknown-event-id
+    test above stops before that point (st.stop() on a missing event)."""
+    event_id = _seed_event(tmp_path)
+    at = AppTest.from_file(str(DASHBOARD_DIR / "pages" / "2_이벤트_상세.py"))
+    at.run()
+    at.text_input[0].set_value(event_id).run()
+
+    assert not at.exception
+    assert len(at.download_button) == 1
+    assert at.download_button[0].proto.label == "📄 PDF 다운로드"
+    assert any(event_id in md.value for md in at.markdown)
 
 
 def test_dept_status_page_loads_with_empty_state():

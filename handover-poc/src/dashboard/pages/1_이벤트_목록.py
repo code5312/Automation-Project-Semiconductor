@@ -47,7 +47,7 @@ with st.container(border=True):
     seed = col2.number_input("시드", min_value=0, value=0, step=1)
     col3.write("")
     col3.write("")
-    if col3.button("생성", type="primary", use_container_width=True):
+    if col3.button("생성", type="primary", width="stretch"):
         try:
             event = build_event(scenario_id, int(seed), ctx, rules)
             repo.save_event(db_path, event)
@@ -80,7 +80,7 @@ else:
     df["event_time"] = pd.to_datetime(df["event_time"], errors="coerce")
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_order=[
             "event_id", "scenario_id", "current_dept", "rule_id",

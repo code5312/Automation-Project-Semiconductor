@@ -51,7 +51,7 @@ with st.container(border=True):
         df = pd.DataFrame(pingpong_rows[:50])
         st.dataframe(
             df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_order=["event_id", "scenario_id", "current_dept", "pingpong_count", "rule_id"],
             column_config={
@@ -70,4 +70,4 @@ with st.container(border=True):
 
 st.write("")
 st.subheader("전체 이벤트 상태")
-st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)

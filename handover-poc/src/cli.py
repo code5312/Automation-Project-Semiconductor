@@ -7,6 +7,7 @@
     python -m src.cli list --db output/handover.db --scenario SC-EQ
     python -m src.cli handover --event-id EVT-xxxx --to M-ENG --reason "..."
     python -m src.cli history --event-id EVT-xxxx
+    python -m src.cli report --event-id EVT-xxxx --out output/reports/
 """
 import json
 import random
@@ -21,6 +22,7 @@ import yaml
 from src.diagnosis.engine import diagnose
 from src.ingest import validate as validate_mod
 from src.models import Diagnosis, Event, SensorSignal, TopSensor, VibrationSignal, VisionSignal
+from src.report.pdf import generate_handover_pdf
 from src.scenarios.catalog import SamplingContext, build_sampling_context, sample
 from src.storage import repository as repo
 from src.storage.migrate import migrate_json_dir
@@ -256,6 +258,22 @@ def history(event_id: str, db: str) -> None:
     for r in records:
         click.echo(f"{r['created_at']}  {r['from_dept']} -> {r['to_dept']}  ({r['reason']})")
     click.echo(f"pingpong_count={len(records)}")
+
+
+@cli.command()
+@click.option("--event-id", required=True)
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(exists=True), help="SQLite database path")
+@click.option("--out", default="output/reports", type=click.Path(), help="Output directory")
+def report(event_id: str, db: str, out: str) -> None:
+    """Render a PDF handover report for one event (signals, diagnosis, ping-pong history)."""
+    event = repo.get_event(db, event_id)
+    if event is None:
+        raise click.ClickException(f"Unknown event_id: {event_id}")
+    handovers = repo.list_handovers(db, event_id)
+
+    out_path = Path(out) / f"{event_id}.pdf"
+    generate_handover_pdf(event, handovers, out_path)
+    click.echo(f"Wrote {out_path}")
 
 
 if __name__ == "__main__":

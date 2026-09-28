@@ -1,4 +1,5 @@
 import sys
+import tempfile
 from pathlib import Path
 
 # Streamlit executes each page as its own standalone script, so make sure
@@ -10,6 +11,7 @@ import streamlit as st
 
 from src.dashboard.common import dept_badge, get_db_path, inject_theme
 from src.handover.tracker import VALID_DEPTS
+from src.report.pdf import generate_handover_pdf
 from src.storage import repository as repo
 
 st.set_page_config(page_title="이벤트 상세", page_icon="🔍", layout="wide")
@@ -32,15 +34,30 @@ if event is None:
 
 diagnosis = event["diagnosis"]
 signals = event["signals"]
+history = repo.list_handovers(db_path, event_id)
 
-st.markdown(
-    f"### `{event_id}` &nbsp; {dept_badge(diagnosis['primary_dept'])}",
-    unsafe_allow_html=True,
-)
-badge_row = f"규칙 `{diagnosis['rule_id']}`"
-if diagnosis["mfg_hold"]:
-    badge_row += " &nbsp;·&nbsp; 🔒 **MFG Hold**"
-st.caption(badge_row)
+title_col, dl_col = st.columns([5, 1])
+with title_col:
+    st.markdown(
+        f"### `{event_id}` &nbsp; {dept_badge(diagnosis['primary_dept'])}",
+        unsafe_allow_html=True,
+    )
+    badge_row = f"규칙 `{diagnosis['rule_id']}`"
+    if diagnosis["mfg_hold"]:
+        badge_row += " &nbsp;·&nbsp; 🔒 **MFG Hold**"
+    st.caption(badge_row)
+with dl_col:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pdf_path = Path(tmp_dir) / f"{event_id}.pdf"
+        generate_handover_pdf(event, history, pdf_path)
+        pdf_bytes = pdf_path.read_bytes()
+    st.download_button(
+        "📄 PDF 다운로드",
+        data=pdf_bytes,
+        file_name=f"{event_id}.pdf",
+        mime="application/pdf",
+        width="stretch",
+    )
 
 st.write("")
 col1, col2 = st.columns(2, gap="large")
@@ -79,7 +96,6 @@ st.write("")
 st.divider()
 st.subheader("핑퐁 이력")
 
-history = repo.list_handovers(db_path, event_id)
 current_dept = history[-1]["to_dept"] if history else diagnosis["primary_dept"]
 
 m1, m2 = st.columns(2)

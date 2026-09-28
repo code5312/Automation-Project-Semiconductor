@@ -10,14 +10,18 @@ model) is built once at startup, not per-request. Dependency functions
 (get_ctx/get_rules/get_db_path) exist so tests can override them with
 lightweight fakes via app.dependency_overrides instead of loading real data.
 """
+import tempfile
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.cli import DEFAULT_DB_PATH, build_event, load_rules
 from src.ingest import validate as validate_mod
+from src.report.pdf import generate_handover_pdf
 from src.scenarios.catalog import SamplingContext, build_sampling_context
 from src.storage import repository as repo
 
@@ -157,3 +161,22 @@ def get_handovers(event_id: str, db_path: str = Depends(get_db_path)) -> dict:
         "pingpong_count": len(history),
         "history": history,
     }
+
+
+@app.get("/events/{event_id}/report.pdf")
+def get_report_pdf(event_id: str, db_path: str = Depends(get_db_path)) -> Response:
+    event = repo.get_event(db_path, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    handovers = repo.list_handovers(db_path, event_id)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pdf_path = Path(tmp_dir) / f"{event_id}.pdf"
+        generate_handover_pdf(event, handovers, pdf_path)
+        pdf_bytes = pdf_path.read_bytes()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{event_id}.pdf"'},
+    )

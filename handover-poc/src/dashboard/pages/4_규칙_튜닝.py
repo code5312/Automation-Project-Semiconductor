@@ -87,7 +87,7 @@ if st.button("이 설정으로 재실행", type="primary"):
     ]
     st.dataframe(
         acc_rows,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={"accuracy": st.column_config.ProgressColumn("정확도", min_value=0.0, max_value=1.0, format="%.0f%%")},
     )
@@ -99,7 +99,7 @@ if st.button("이 설정으로 재실행", type="primary"):
     pivot = confusion_df.pivot_table(
         index="expected_dept", columns="predicted_dept", values="count", fill_value=0, aggfunc="sum"
     )
-    st.dataframe(pivot, use_container_width=True)
+    st.dataframe(pivot, width="stretch")
     st.caption("행 = 정답(expected_dept), 열 = 판정 결과(predicted_dept)")
 
     st.info("이 결과는 미리보기이며 DB나 파일에 저장되지 않았습니다.")

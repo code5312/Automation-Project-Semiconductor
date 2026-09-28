@@ -154,6 +154,33 @@ API: `POST /events/{event_id}/handovers` (`{"to_dept": "...", "reason": "..."}`)
 첫 재할당의 `from_dept`는 이벤트의 원래 `primary_dept`에서 자동으로 채워지고, 그 다음부터는
 직전 `to_dept`에서 이어집니다.
 
+## PDF 인수인계 리포트
+
+이벤트 + 핑퐁 이력을 한 장짜리 "인수인계 보고서" PDF로 렌더링합니다 (`src/report/pdf.py`,
+ReportLab). 판정 결과(규칙·점수·근거)와 신호 요약, 재할당 이력, "이 결과는 시뮬레이션
+데이터입니다" 안내 문구까지 포함합니다.
+
+```bash
+# CLI
+./.venv/Scripts/python.exe -m src.cli report --event-id EVT-xxxx --out output/reports/
+```
+
+API: `GET /events/{event_id}/report.pdf` (`Content-Type: application/pdf`, 없는 이벤트는
+404). 대시보드 "이벤트 상세" 페이지에는 "📄 PDF 다운로드" 버튼으로도 붙어 있습니다 — 셋 다
+같은 `generate_handover_pdf()`를 호출합니다.
+
+### 한글 폰트: CID 폰트로 시작했다가 실제로 렌더링해보고 바꿨습니다
+
+처음엔 ReportLab이 기본 제공하는 CJK CID 폰트(`HYSMyeongJo-Medium`/`HYGothic-Medium`,
+이름만 참조하고 폰트 파일은 안 담음)를 썼습니다. 코드는 문제없이 실행되고 텍스트 추출도
+정상이길래 넘어갈 뻔했는데, 실제로 PDF를 렌더링해서 눈으로 봤더니 — 이 뷰어에 한글
+폰트가 없어서 한글 글자가 전부 빈칸으로 나오고, 그 여파로 표 열도 서로 겹쳐서 깨졌습니다.
+Windows에 이미 설치되어 있는 Malgun Gothic(`C:\Windows\Fonts\malgun.ttf`)을 실제로
+**임베드**하는 방식으로 바꿔서 해결했습니다 (`src/report/pdf.py`의 `_register_fonts()`가
+Windows/Linux/macOS 순서로 흔한 설치 경로를 찾고, 못 찾으면 CID 폰트로 폴백). 코드가
+정상 실행된다고 결과물까지 정상이라고 가정하면 안 된다는 걸 다시 확인한 사례라
+남겨둡니다 — 대시보드 sys.path 버그를 잡을 때와 같은 교훈입니다.
+
 ## 대시보드 (Streamlit)
 
 ```bash
@@ -229,8 +256,9 @@ pytest 밖에서 독립 스크립트로 직접 돌려본 실데이터 스모크 
 (R0~R3 각 1회 이상, `health_index=None`/kurtosis 대체 처리), `tests/test_storage.py`
 (SQLite CRUD·필터·마이그레이션), `tests/test_api.py`(FastAPI 엔드포인트, 합성 데이터로
 격리), `tests/test_handover.py`(핑퐁 검증 규칙 + DB 이력 체이닝), `tests/test_dashboard.py`
-(`AppTest`로 Streamlit 페이지 4개 + 홈 실제 실행)로 구성되어 있습니다. `tests/conftest.py`에
-실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
+(`AppTest`로 Streamlit 페이지 4개 + 홈 실제 실행, PDF 다운로드 버튼 포함), `tests/test_report.py`
+(PDF 생성 — 매직 바이트, 빈 이력/`primary_dept=None` 처리)로 구성되어 있습니다.
+`tests/conftest.py`에 실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
 
 ## 배치 실험 결과에 대한 솔직한 안내
 
@@ -319,3 +347,9 @@ pytest 밖에서 독립 스크립트로 직접 돌려본 실데이터 스모크 
 - 규칙 튜닝 페이지는 슬라이더 값을 `config/rules.yaml`에 저장하는 기능을 일부러 넣지
   않았습니다 — 그 파일은 각 값의 의미를 설명하는 주석이 많은데, `yaml.dump`로 덮어쓰면
   주석이 전부 사라집니다. 미리보기만 제공하고 값 복사는 사람이 하도록 남겨뒀습니다.
+- PDF 라이브러리로 WeasyPrint(HTML→PDF) 대신 ReportLab을 골랐습니다 — WeasyPrint는
+  Windows에서 Pango/Cairo 같은 시스템 라이브러리가 추가로 필요해 설치가 까다로운 경우가
+  많은데, ReportLab은 순수 Python 휠만으로 설치됩니다.
+- `use_container_width`를 대시보드 전 페이지에서 `width="stretch"`로 바꿨습니다 —
+  Streamlit이 "2025-12-31 이후 제거 예정" 경고를 띄우는데, 이 프로젝트 기준 "오늘"(2026-09-28)
+  이 이미 그 날짜를 지나 있어서 다음 업그레이드에서 바로 깨질 수 있었습니다.

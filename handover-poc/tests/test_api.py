@@ -143,3 +143,18 @@ def test_handover_noop_reassignment_returns_422(client):
 def test_get_handovers_for_unknown_event_returns_404(client):
     resp = client.get("/events/EVT-nope/handovers")
     assert resp.status_code == 404
+
+
+def test_report_pdf_returns_valid_pdf_bytes(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event_id = gen.json()["event_id"]
+
+    resp = client.get(f"/events/{event_id}/report.pdf")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content[:5] == b"%PDF-"
+
+
+def test_report_pdf_for_unknown_event_returns_404(client):
+    resp = client.get("/events/EVT-nope/report.pdf")
+    assert resp.status_code == 404
