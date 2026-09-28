@@ -66,18 +66,35 @@ data/raw/
 프로젝트 루트(`handover-poc/`)에서 실행합니다.
 
 ```bash
-# 이벤트 1건 생성 (output/events/EVT-<timestamp>-<random4>.json)
+# 이벤트 1건 생성 (output/events/EVT-<timestamp>-<random4>.json + output/handover.db)
 ./.venv/Scripts/python.exe -m src.cli generate --scenario SC-EQ --seed 42 --out output/events/
 
 # 정합성 검증만 단독 실행
 ./.venv/Scripts/python.exe -m src.cli validate --event-file output/events/EVT-xxxx.json
 
-# 배치 실험: 4개 시나리오 x seed 0~49 = 200개 이벤트 + 혼동행렬
+# 배치 실험: 4개 시나리오 x seed 0~49 = 200개 이벤트 + 혼동행렬 (DB에도 저장)
 ./.venv/Scripts/python.exe -m src.cli batch --seeds 50 --out output/experiments/
+
+# 기존 JSON 이벤트들을 DB로 일괄 이전 (이미 저장된 event_id는 덮어씀)
+./.venv/Scripts/python.exe -m src.cli migrate --events-dir output/events --db output/handover.db
+
+# DB에 저장된 이벤트 조회 (필터 가능)
+./.venv/Scripts/python.exe -m src.cli list --db output/handover.db --scenario SC-EQ --dept M-ENG
 ```
 
 시나리오 ID: `SC-EQ`(설비 기인), `SC-PR`(공정 기인), `SC-UN`(원인 불명확), `SC-NG`(정상).
 가중치·임계값은 `config/rules.yaml`, 시나리오 정의는 `config/scenarios.yaml`에 있습니다.
+
+### 영속화 (SQLite)
+
+`generate`/`batch`는 기본적으로 이벤트를 `output/handover.db`(SQLite, git-ignored)에도
+저장합니다. `--no-db`로 끌 수 있고, `--db <path>`로 다른 경로를 쓸 수 있습니다. 스키마는
+`src/storage/repository.py`의 `events` 테이블 하나 — 조회용 컬럼(scenario_id,
+primary_dept, rule_id 등)과 원본을 그대로 보존하는 `raw_json` 컬럼을 함께 둡니다: 필터는
+컬럼으로, 상세 조회는 `raw_json`으로 하면 되고 이벤트 JSON 스키마가 바뀌어도 컬럼만
+맞춰주면 됩니다. `event_id`가 기본키라 같은 이벤트를 다시 저장하면 덮어씁니다(upsert).
+다음 단계(FastAPI)는 이 `src/storage/repository.py`를 그대로 가져다 쓸 예정이라, 여기엔
+API 관련 코드가 없습니다.
 
 ### 재현성
 
@@ -145,6 +162,11 @@ data/raw/
 - WM-811K 목업(`wafer_mock.py`)은 삭제하지 않고 유지했습니다 — 거대한 `LSWMD.pkl` 없이도
   `tests/test_signals.py`가 빠르게 돌 수 있어야 해서, 실 데이터 경로(`wm811k.py`)와는
   별도로 테스트/오프라인 개발용 픽스처로 남겨뒀습니다.
+- SQLite 스키마: 완전 정규화된 여러 테이블 대신 `events` 테이블 하나에 조회용 컬럼 +
+  `raw_json` 블롭으로 설계했습니다. 이벤트 스키마가 아직 확정 단계가 아니라(다음 단계에서
+  API가 필드를 더 요구할 수 있음), 정규화를 미리 하면 스키마 변경마다 마이그레이션이
+  필요해집니다. `raw_json`이 원본을 그대로 보존하니 컬럼은 "지금 필요한 필터"만 추가하면
+  됩니다. ORM 없이 표준 라이브러리 `sqlite3`만 사용 (의존성 추가 없음).
 - `weights.equipment.vibration_hi` → `vibration_abnormal`로 이름을 바꿨습니다 — "hi"가
   `health_index`를 뜻했는데, 이제는 kurtosis/crest_factor 대체 신호로 채워지는 경우가
   대부분이라 예전 이름이 오해를 줄 수 있었습니다.

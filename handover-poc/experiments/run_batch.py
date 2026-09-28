@@ -7,12 +7,14 @@ out low, report it as-is; the fix belongs in config/rules.yaml, not here.
 import json
 from collections import Counter
 from pathlib import Path
+from typing import Optional
 
 from src.cli import build_event, load_rules
 from src.scenarios.catalog import build_sampling_context
+from src.storage import repository as repo
 
 
-def run_batch(seeds: int, out_dir: Path) -> None:
+def run_batch(seeds: int, out_dir: Path, db_path: Optional[str] = None) -> None:
     out_dir = Path(out_dir)
     events_dir = out_dir / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
@@ -31,6 +33,8 @@ def run_batch(seeds: int, out_dir: Path) -> None:
             event = build_event(scenario_id, seed, ctx, rules)
             with open(events_dir / f"{event['event_id']}.json", "w", encoding="utf-8") as f:
                 json.dump(event, f, indent=2, ensure_ascii=False)
+            if db_path is not None:
+                repo.save_event(db_path, event)
 
             predicted = event["diagnosis"]["primary_dept"]
             confusion[(str(expected), str(predicted))] += 1
@@ -46,6 +50,8 @@ def run_batch(seeds: int, out_dir: Path) -> None:
 
     total_events = sum(per_scenario_total.values())
     print(f"Wrote {total_events} events to {events_dir}")
+    if db_path is not None:
+        print(f"Saved {total_events} events to {db_path}")
     print(f"Wrote confusion matrix to {csv_path}")
     print("Per-scenario accuracy:")
     for scenario_id in scenario_ids:

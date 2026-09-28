@@ -3,6 +3,8 @@
     python -m src.cli generate --scenario SC-EQ --seed 42 --out output/events/
     python -m src.cli validate --event-file output/events/EVT-xxxx.json
     python -m src.cli batch --seeds 50 --out output/experiments/
+    python -m src.cli migrate --events-dir output/events --db output/handover.db
+    python -m src.cli list --db output/handover.db --scenario SC-EQ
 """
 import json
 import random
@@ -18,8 +20,11 @@ from src.diagnosis.engine import diagnose
 from src.ingest import validate as validate_mod
 from src.models import Diagnosis, Event, SensorSignal, TopSensor, VibrationSignal, VisionSignal
 from src.scenarios.catalog import SamplingContext, build_sampling_context, sample
+from src.storage import repository as repo
+from src.storage.migrate import migrate_json_dir
 
 RULES_PATH = Path("config/rules.yaml")
+DEFAULT_DB_PATH = "output/handover.db"
 
 
 def load_rules(path: Path = RULES_PATH) -> dict:
@@ -137,8 +142,10 @@ def cli() -> None:
 @click.option("--scenario", "scenario_id", required=True, help="Scenario id, e.g. SC-EQ")
 @click.option("--seed", required=True, type=int)
 @click.option("--out", default="output/events", type=click.Path(), help="Output directory")
-def generate(scenario_id: str, seed: int, out: str) -> None:
-    """Generate one event JSON file."""
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(), help="SQLite database path")
+@click.option("--no-db", is_flag=True, default=False, help="Skip writing to the database")
+def generate(scenario_id: str, seed: int, out: str, db: str, no_db: bool) -> None:
+    """Generate one event, writing it to a JSON file and (by default) to SQLite."""
     rules = load_rules()
     ctx = build_sampling_context()
     event_dict = build_event(scenario_id, seed, ctx, rules)
@@ -148,8 +155,12 @@ def generate(scenario_id: str, seed: int, out: str) -> None:
     out_path = out_dir / f"{event_dict['event_id']}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(event_dict, f, indent=2, ensure_ascii=False)
-
     click.echo(f"Wrote {out_path}")
+
+    if not no_db:
+        repo.save_event(db, event_dict)
+        click.echo(f"Saved to {db}")
+
     diagnosis = event_dict["diagnosis"]
     click.echo(f"rule_id={diagnosis['rule_id']} primary_dept={diagnosis['primary_dept']} mfg_hold={diagnosis['mfg_hold']}")
 
@@ -179,11 +190,42 @@ def validate(event_file: str) -> None:
 @cli.command()
 @click.option("--seeds", required=True, type=int, help="Seeds per scenario (0..seeds-1)")
 @click.option("--out", default="output/experiments", type=click.Path(), help="Output directory")
-def batch(seeds: int, out: str) -> None:
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(), help="SQLite database path")
+@click.option("--no-db", is_flag=True, default=False, help="Skip writing to the database")
+def batch(seeds: int, out: str, db: str, no_db: bool) -> None:
     """Generate scenarios x seeds events and score them into a confusion matrix."""
     from experiments.run_batch import run_batch as _run_batch
 
-    _run_batch(seeds, Path(out))
+    _run_batch(seeds, Path(out), db_path=None if no_db else db)
+
+
+@cli.command()
+@click.option("--events-dir", required=True, type=click.Path(exists=True), help="Directory of event *.json files")
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(), help="SQLite database path")
+def migrate(events_dir: str, db: str) -> None:
+    """Migrate existing event JSON files into the SQLite database."""
+    count = migrate_json_dir(events_dir, db)
+    click.echo(f"Migrated {count} events from {events_dir} into {db}")
+
+
+@cli.command("list")
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(exists=True), help="SQLite database path")
+@click.option("--scenario", "scenario_id", default=None, help="Filter by scenario id")
+@click.option("--dept", "primary_dept", default=None, help="Filter by primary_dept")
+@click.option("--limit", default=20, type=int)
+def list_events_cmd(db: str, scenario_id: Optional[str], primary_dept: Optional[str], limit: int) -> None:
+    """List events stored in the database (most recent first)."""
+    events = repo.list_events(db, scenario_id=scenario_id, primary_dept=primary_dept, limit=limit)
+    if not events:
+        click.echo("No events found")
+        return
+    for event in events:
+        diagnosis = event["diagnosis"]
+        click.echo(
+            f"{event['event_id']}  scenario={event['scenario_id']}  "
+            f"rule_id={diagnosis['rule_id']}  primary_dept={diagnosis['primary_dept']}  "
+            f"event_time={event['event_time']}"
+        )
 
 
 if __name__ == "__main__":
