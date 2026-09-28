@@ -66,6 +66,11 @@ class ValidateRequest(BaseModel):
     event: dict
 
 
+class HandoverRequest(BaseModel):
+    to_dept: str
+    reason: str
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -127,3 +132,28 @@ def validate_event(req: ValidateRequest, ctx: SamplingContext = Depends(get_ctx)
     except (ValueError, KeyError) as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"status": "ok"}
+
+
+@app.post("/events/{event_id}/handovers", status_code=201)
+def create_handover(event_id: str, req: HandoverRequest, db_path: str = Depends(get_db_path)) -> dict:
+    try:
+        return repo.add_handover(db_path, event_id, req.to_dept, req.reason)
+    except ValueError as e:
+        message = str(e)
+        status_code = 404 if message.startswith("Unknown event_id") else 422
+        raise HTTPException(status_code=status_code, detail=message)
+
+
+@app.get("/events/{event_id}/handovers")
+def get_handovers(event_id: str, db_path: str = Depends(get_db_path)) -> dict:
+    event = repo.get_event(db_path, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="event not found")
+    history = repo.list_handovers(db_path, event_id)
+    current_dept = history[-1]["to_dept"] if history else event["diagnosis"]["primary_dept"]
+    return {
+        "event_id": event_id,
+        "current_dept": current_dept,
+        "pingpong_count": len(history),
+        "history": history,
+    }

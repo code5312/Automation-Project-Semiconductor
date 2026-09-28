@@ -2,7 +2,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app, get_ctx, get_db_path, get_rules
+from src.handover.tracker import VALID_DEPTS
 from tests.conftest import FAKE_RULES, build_fake_ctx
+
+
+def _other_dept(current: str) -> str:
+    return next(d for d in VALID_DEPTS if d != current)
 
 
 @pytest.fixture
@@ -81,3 +86,60 @@ def test_validate_endpoint_accepts_generated_event(client):
     resp = client.post("/validate", json={"event": event})
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
+
+
+def test_handover_lifecycle(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event = gen.json()
+    event_id = event["event_id"]
+    primary_dept = event["diagnosis"]["primary_dept"]
+    target = _other_dept(primary_dept)
+
+    empty = client.get(f"/events/{event_id}/handovers")
+    assert empty.status_code == 200
+    assert empty.json() == {
+        "event_id": event_id,
+        "current_dept": primary_dept,
+        "pingpong_count": 0,
+        "history": [],
+    }
+
+    resp = client.post(f"/events/{event_id}/handovers", json={"to_dept": target, "reason": "root-cause owner assigned"})
+    assert resp.status_code == 201
+    record = resp.json()
+    assert record["from_dept"] == primary_dept
+    assert record["to_dept"] == target
+
+    after = client.get(f"/events/{event_id}/handovers")
+    body = after.json()
+    assert body["current_dept"] == target
+    assert body["pingpong_count"] == 1
+    assert len(body["history"]) == 1
+
+
+def test_handover_unknown_event_returns_404(client):
+    resp = client.post("/events/EVT-nope/handovers", json={"to_dept": "M-ENG", "reason": "x"})
+    assert resp.status_code == 404
+
+
+def test_handover_invalid_department_returns_422(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event_id = gen.json()["event_id"]
+
+    resp = client.post(f"/events/{event_id}/handovers", json={"to_dept": "QA", "reason": "typo dept"})
+    assert resp.status_code == 422
+
+
+def test_handover_noop_reassignment_returns_422(client):
+    gen = client.post("/events/generate", json={"scenario_id": "SC-EQ", "seed": 1})
+    event = gen.json()
+    event_id = event["event_id"]
+    primary_dept = event["diagnosis"]["primary_dept"]
+
+    resp = client.post(f"/events/{event_id}/handovers", json={"to_dept": primary_dept, "reason": "same dept"})
+    assert resp.status_code == 422
+
+
+def test_get_handovers_for_unknown_event_returns_404(client):
+    resp = client.get("/events/EVT-nope/handovers")
+    assert resp.status_code == 404

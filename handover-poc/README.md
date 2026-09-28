@@ -5,8 +5,8 @@
 세 개의 공개 데이터셋(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 하나의
 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인을 판정해 주관 부서(M-ENG/P-ENG/YI)를
 제안하는 시스템의 프로토타입입니다. 핵심 로직(ingest/signals/scenarios/diagnosis)은
-순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI가 모두 그 위에 얇게 얹혀 있습니다.
-대시보드·PDF·LLM 요약은 다음 단계입니다.
+순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI·부서 간 인수인계("핑퐁") 추적이 모두 그
+위에 얇게 얹혀 있습니다. 대시보드·PDF·LLM 요약은 다음 단계입니다.
 
 ## 데이터 상태 (중요)
 
@@ -132,6 +132,28 @@ CLI의 `build_event`/`load_rules`와 `storage/repository.py`를 그대로 재사
 새로 발급되며(실제 이벤트 관리 시스템의 "생성 시각"과 같은 성격), 재현성 검사에서는
 이 두 필드를 제외하고 비교합니다.
 
+## 핑퐁(부서 재할당) 이력 추적
+
+이벤트가 처음 생성될 때의 `diagnosis.primary_dept`는 규칙 엔진의 판정일 뿐, 실제로는
+부서 간에 여러 번 재할당("핑퐁")될 수 있습니다. 이건 이벤트 JSON 자체(불변)와는 성격이
+달라서 — 생성 후에 계속 쌓이는 이력이라 — 별도의 `handovers` 테이블(이벤트당 여러 행,
+append-only)로 추적합니다. 유효한 부서는 `YI`/`MFG`/`M-ENG`/`P-ENG` 4개
+(`src/handover/tracker.py`의 `VALID_DEPTS`)이고, 순수 함수 `validate_handover`가 (1) 알 수
+없는 부서, (2) 이유 없는 재할당, (3) 같은 부서로의 무의미한 재할당을 거부합니다.
+
+```bash
+# 재할당 기록 (직전 담당 부서는 자동으로 추적된 현재 상태에서 가져옴)
+./.venv/Scripts/python.exe -m src.cli handover --event-id EVT-xxxx --to P-ENG --reason "설비 이상 없음 확인"
+
+# 이력 + 핑퐁 횟수 조회
+./.venv/Scripts/python.exe -m src.cli history --event-id EVT-xxxx
+```
+
+API: `POST /events/{event_id}/handovers` (`{"to_dept": "...", "reason": "..."}`),
+`GET /events/{event_id}/handovers` → `{"current_dept", "pingpong_count", "history"}`.
+첫 재할당의 `from_dept`는 이벤트의 원래 `primary_dept`에서 자동으로 채워지고, 그 다음부터는
+직전 `to_dept`에서 이어집니다.
+
 ## 테스트
 
 ```bash
@@ -139,8 +161,11 @@ CLI의 `build_event`/`load_rules`와 `storage/repository.py`를 그대로 재사
 ```
 
 `tests/test_validate.py`(정합성 검증 5종 x 정상/실패), `tests/test_signals.py`(비전 4개
-그룹, 센서 정상/이상, 진동 두 모드), `tests/test_diagnosis.py`(R0~R3 각 1회 이상,
-`health_index=None` 처리)로 구성되어 있습니다.
+그룹, 센서 정상/이상, 진동 두 모드 + kurtosis/crest_factor), `tests/test_diagnosis.py`
+(R0~R3 각 1회 이상, `health_index=None`/kurtosis 대체 처리), `tests/test_storage.py`
+(SQLite CRUD·필터·마이그레이션), `tests/test_api.py`(FastAPI 엔드포인트, 합성 데이터로
+격리), `tests/test_handover.py`(핑퐁 검증 규칙 + DB 이력 체이닝)로 구성되어 있습니다.
+`tests/conftest.py`에 실데이터 없이 쓸 수 있는 합성 `SamplingContext` 픽스처가 있습니다.
 
 ## 배치 실험 결과에 대한 솔직한 안내
 
@@ -212,3 +237,11 @@ CLI의 `build_event`/`load_rules`와 `storage/repository.py`를 그대로 재사
 - Pydantic 모델은 요청 바디(`GenerateRequest`, `ValidateRequest`)에만 쓰고 응답은 그냥
   `dict`로 반환합니다 — 이벤트 스키마가 `models.py`의 dataclass로 이미 정의돼 있어
   Pydantic으로 다시 정의하면 두 곳을 계속 동기화해야 했을 것입니다.
+- 핑퐁 이력은 이벤트의 `raw_json`에 필드를 추가하는 대신 별도 `handovers` 테이블(append-only)로
+  분리했습니다. 이벤트 JSON은 "생성 시점의 스냅샷"이라는 불변성을 유지하고 싶었고, 이력은
+  거꾸로 계속 늘어나는 데이터라 성격이 다릅니다. 같은 테이블에 넣으면 매 재할당마다
+  `raw_json` 전체를 다시 파싱·직렬화해야 했을 것입니다.
+- MFG를 `depts`(rules.yaml, 판정 엔진)에는 넣지 않고 `VALID_DEPTS`(handover/tracker.py)에만
+  넣었습니다 — 판정 엔진은 원인을 equipment/process 두 가설로만 나누기 때문에 MFG가 주관
+  부서로 나올 일이 없지만, 실제 핑퐁 흐름에서는 R1의 MFG Hold 이후 MFG도 개입할 수 있어서
+  핑퐁 대상 부서로는 유효해야 합니다.

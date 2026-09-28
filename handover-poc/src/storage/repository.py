@@ -1,4 +1,4 @@
-"""SQLite persistence for generated events.
+"""SQLite persistence for generated events and their handover history.
 
 Events are still plain dicts assembled by src/cli.py's build_event();
 this module only adds a storage layer on top of that -- signal extraction,
@@ -9,12 +9,20 @@ Each event is stored twice: as indexed columns for filtering (scenario_id,
 primary_dept, etc., used by list_events) and as a raw_json blob for full
 fidelity (used by get_event) -- the columns are a query index, not the
 source of truth.
+
+Handovers (department reassignments, i.e. the "핑퐁" this project tracks)
+are a separate append-only table keyed by event_id, since they accumulate
+*after* an event's own immutable JSON is written -- see src.handover.tracker
+for the domain rules on what makes one handover step valid.
 """
 import json
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
+
+from src.handover.tracker import validate_handover
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -34,6 +42,16 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_scenario ON events(scenario_id);
 CREATE INDEX IF NOT EXISTS idx_events_primary_dept ON events(primary_dept);
 CREATE INDEX IF NOT EXISTS idx_events_event_time ON events(event_time);
+
+CREATE TABLE IF NOT EXISTS handovers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL REFERENCES events(event_id),
+    from_dept TEXT,
+    to_dept TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_handovers_event ON handovers(event_id);
 """
 
 
@@ -142,3 +160,66 @@ def count_events(db_path: str | Path) -> int:
     with _connect(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) FROM events").fetchone()
     return row[0] if row else 0
+
+
+def list_handovers(db_path: str | Path, event_id: str) -> list[dict]:
+    """Handover history for one event, oldest first."""
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT from_dept, to_dept, reason, created_at FROM handovers WHERE event_id = ? ORDER BY id ASC",
+            (event_id,),
+        ).fetchall()
+    return [
+        {"from_dept": r[0], "to_dept": r[1], "reason": r[2], "created_at": r[3]}
+        for r in rows
+    ]
+
+
+def get_current_dept(db_path: str | Path, event_id: str) -> Optional[str]:
+    """The event's current owning department: the last handover's to_dept,
+    or its original diagnosis.primary_dept if it has never been handed over."""
+    event = get_event(db_path, event_id)
+    if event is None:
+        raise ValueError(f"Unknown event_id: {event_id}")
+
+    history = list_handovers(db_path, event_id)
+    if history:
+        return history[-1]["to_dept"]
+    return event["diagnosis"]["primary_dept"]
+
+
+def add_handover(
+    db_path: str | Path,
+    event_id: str,
+    to_dept: str,
+    reason: str,
+    created_at: Optional[str] = None,
+) -> dict:
+    """Record one department reassignment for an existing event.
+
+    Raises ValueError if the event doesn't exist or the handover itself
+    doesn't make sense (see src.handover.tracker.validate_handover).
+    """
+    current_dept = get_current_dept(db_path, event_id)
+    validate_handover(current_dept, to_dept, reason)
+
+    record = {
+        "from_dept": current_dept,
+        "to_dept": to_dept,
+        "reason": reason,
+        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+    }
+
+    init_db(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO handovers (event_id, from_dept, to_dept, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+            (event_id, record["from_dept"], record["to_dept"], record["reason"], record["created_at"]),
+        )
+    return record
+
+
+def get_pingpong_count(db_path: str | Path, event_id: str) -> int:
+    """How many times this event has been handed to a different department."""
+    return len(list_handovers(db_path, event_id))

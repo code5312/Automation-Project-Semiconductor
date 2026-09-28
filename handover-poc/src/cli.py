@@ -5,6 +5,8 @@
     python -m src.cli batch --seeds 50 --out output/experiments/
     python -m src.cli migrate --events-dir output/events --db output/handover.db
     python -m src.cli list --db output/handover.db --scenario SC-EQ
+    python -m src.cli handover --event-id EVT-xxxx --to M-ENG --reason "..."
+    python -m src.cli history --event-id EVT-xxxx
 """
 import json
 import random
@@ -226,6 +228,34 @@ def list_events_cmd(db: str, scenario_id: Optional[str], primary_dept: Optional[
             f"rule_id={diagnosis['rule_id']}  primary_dept={diagnosis['primary_dept']}  "
             f"event_time={event['event_time']}"
         )
+
+
+@cli.command()
+@click.option("--event-id", required=True)
+@click.option("--to", "to_dept", required=True, help="Target department (YI/MFG/M-ENG/P-ENG)")
+@click.option("--reason", required=True)
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(exists=True), help="SQLite database path")
+def handover(event_id: str, to_dept: str, reason: str, db: str) -> None:
+    """Record a department reassignment ("핑퐁") for an existing event."""
+    try:
+        record = repo.add_handover(db, event_id, to_dept, reason)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"{event_id}: {record['from_dept']} -> {record['to_dept']}  ({record['reason']})")
+
+
+@cli.command()
+@click.option("--event-id", required=True)
+@click.option("--db", default=DEFAULT_DB_PATH, type=click.Path(exists=True), help="SQLite database path")
+def history(event_id: str, db: str) -> None:
+    """Show handover ("핑퐁") history for an event."""
+    records = repo.list_handovers(db, event_id)
+    if not records:
+        click.echo("No handovers recorded")
+        return
+    for r in records:
+        click.echo(f"{r['created_at']}  {r['from_dept']} -> {r['to_dept']}  ({r['reason']})")
+    click.echo(f"pingpong_count={len(records)}")
 
 
 if __name__ == "__main__":
