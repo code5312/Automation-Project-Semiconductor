@@ -1,0 +1,28 @@
+# Weights and thresholds for src/diagnosis/engine.py.
+# All numbers live here, not in code, so they can be tuned without touching
+# the engine. Scores are diagnostic scores backed by explicit contributions
+# -- never call them "confidence" (they are not probabilities).
+
+weights:
+  equipment:
+    edge_pattern: 0.4    # vision.pattern_group == "edge"
+    vibration_hi: 0.4    # normalized health_index (0 if unavailable)
+    sensor_normal: 0.2   # 1 - sensor.anomaly_score
+  process:
+    center_pattern: 0.3  # vision.pattern_group == "center"
+    sensor_anomaly: 0.5  # sensor.anomaly_score
+    vibration_normal: 0.2  # 1 - |normalized health_index| (0 if unavailable)
+
+thresholds:
+  hi_cap: 6           # health_index is divided by this to normalize into [0,1]
+  hi_normal_max: 1.0  # |health_index| <= this counts as "within baseline range"
+  sensor_low: 0.3     # anomaly_score below this counts as "low" (R0)
+  score_min: 0.6      # R2: winning hypothesis score must be >= this
+  score_gap_min: 0.15 # R2: winning hypothesis must lead 2nd place by >= this
+
+depts:
+  equipment: M-ENG
+  process: P-ENG
+  unclear: YI
+
+rules_order: [R0, R1, R2, R3]

@@ -1,0 +1,8 @@
+# Raw datasets kept locally only (large binaries / not meant for version control).
+# See handover-poc/README.md for where to place them.
+LSWMD.pkl
+uci-secom.csv
+2004.02.12.10.32.39
+
+# Claude Code's own local session state -- machine-specific, not project source.
+.claude/

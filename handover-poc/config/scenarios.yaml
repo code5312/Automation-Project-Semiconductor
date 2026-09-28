@@ -1,0 +1,38 @@
+# Scenario catalog for src/scenarios/catalog.py.
+# sensor_condition selects a SECOM row deterministically (given a seed) from
+# the subset of rows matching the condition. vibration_condition is only
+# meaningful when health_index is available (full_baseline mode); in
+# single_file mode there is no baseline, so it is ignored and logged --
+# never faked with a hardcoded threshold.
+
+scenarios:
+  SC-EQ:
+    label: "설비 기인"
+    vision_pattern_group: edge
+    sensor_condition: anomaly_score_percentile_below_50
+    vibration_condition: health_index_ge_3
+    expected_dept: M-ENG
+  SC-PR:
+    label: "공정 기인"
+    vision_pattern_group: center
+    sensor_condition: fail_row_anomaly_top_20pct
+    vibration_condition: baseline_range
+    expected_dept: P-ENG
+  SC-UN:
+    label: "원인 불명확"
+    vision_pattern_group: other
+    sensor_condition: random
+    vibration_condition: random
+    expected_dept: YI
+  SC-NG:
+    label: "정상"
+    vision_pattern_group: none
+    sensor_condition: pass_row_anomaly_below_50
+    vibration_condition: baseline_range
+    expected_dept: null
+
+sampling:
+  baseline_n: 144
+  secom_path: data/raw/uci-secom.csv
+  vibration_path: data/raw/vibration
+  wm811k_path: data/raw/wm811k/LSWMD.pkl
