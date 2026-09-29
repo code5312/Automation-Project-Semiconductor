@@ -43,7 +43,9 @@ def build_sampling_context(config_path: str | Path = "config/scenarios.yaml") ->
     secom_df = loaders.load_secom(sampling_cfg["secom_path"])
     feature_cols = [c for c in secom_df.columns if c not in ("Time", "Pass/Fail")]
 
-    sensor_model = fit_sensor_model(secom_df, feature_cols, method="topn_zscore", top_n=5)
+    sensor_model = fit_sensor_model(
+        secom_df, feature_cols, method=sampling_cfg.get("sensor_method", "topn_zscore"), top_n=5
+    )
     anomaly_scores = compute_anomaly_scores_batch(sensor_model, secom_df)
 
     vibration_load_result = loaders.load_vibration_rms(sampling_cfg["vibration_path"])

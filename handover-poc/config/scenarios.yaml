@@ -36,3 +36,9 @@ sampling:
   secom_path: data/raw/uci-secom.csv
   vibration_path: data/raw/vibration
   wm811k_path: data/raw/wm811k/LSWMD.pkl
+  # topn_zscore barely separates SECOM pass/fail rows on this dataset (591
+  # dims -- the "curse of dimensionality" inflates top-N |z| for normal rows
+  # too) and 0% of pass rows land under rules.yaml's sensor_low=0.3, so R0
+  # can never fire. isolation_forest is properly calibrated to [0,1]: 73.5%
+  # of pass rows land under 0.3 (measured directly against uci-secom.csv).
+  sensor_method: isolation_forest
