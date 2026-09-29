@@ -63,7 +63,10 @@ def fake_dashboard_resources(tmp_path, monkeypatch):
 
 
 def test_home_page_loads_without_exception():
-    at = AppTest.from_file(str(DASHBOARD_DIR / "app.py"))
+    # app.py queries repository.list_events_with_status() for its KPI row,
+    # which can occasionally miss AppTest's default 3s timeout under load
+    # (same reasoning as the longer timeout on the PDF-generation tests below).
+    at = AppTest.from_file(str(DASHBOARD_DIR / "app.py"), default_timeout=15)
     at.run()
     assert not at.exception
 

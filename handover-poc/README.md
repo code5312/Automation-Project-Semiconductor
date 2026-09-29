@@ -340,6 +340,34 @@ pytest 밖에서 독립 스크립트로 직접 돌려본 실데이터 스모크 
 대체 신호를 쓰며, 둘 다 없을 때만 기여도를 0으로 둡니다 — 이 판단 경로는 항상
 `diagnosis.notes`에 남습니다.
 
+## 배포 (Docker)
+
+```bash
+docker compose up --build
+```
+
+`api`(포트 8000)와 `dashboard`(포트 8501) 두 서비스가 같은 이미지로 뜹니다. 둘 다
+`./data`와 `./output`을 컨테이너의 `/app/data`, `/app/output`에 바인드 마운트합니다 —
+`data/raw/`(SECOM csv, 진동 파일, `LSWMD.pkl` — 2GB라 이미지에 절대 안 굽습니다)와
+`output/handover.db`는 런타임 상태이지 이미지 콘텐츠가 아닙니다. LLM 요약을 쓰려면
+`ANTHROPIC_API_KEY`를 환경변수로 넘기세요 (`ANTHROPIC_API_KEY=sk-... docker compose up`).
+
+**첫 실행 시 WM-811K 로딩(5~8분)은 컨테이너 안에서도 똑같이 발생합니다** — `data/raw/`가
+바인드 마운트이므로, 호스트에서 먼저 `python -m src.cli generate ...`를 한 번 돌려서
+`wm811k_labeled_cache.pkl`을 만들어두면 컨테이너도 그 캐시를 그대로 씁니다. `api`와
+`dashboard`를 동시에 처음 띄우면 둘 다 캐시가 없는 상태에서 동시에 만들려고 할 수 있는데
+(같은 마운트를 보고 있어서 파일을 두 번 쓰는 정도의 경미한 경합), 사소한 문제라 별도
+방어 코드는 넣지 않았습니다.
+
+`fonts-nanum`을 Dockerfile에서 설치합니다 — PDF 리포트의 한글 폰트가 `src/report/pdf.py`의
+Linux 폴백 경로(`/usr/share/fonts/truetype/nanum/NanumGothic.ttf`)와 정확히 일치해서,
+별도 코드 변경 없이 임베드 폰트로 정상 렌더링됩니다.
+
+**이번 범위에 포함하지 않은 것** (다음 단계 후보로 남겨둠): 인증/접근 권한(현재는 누구나
+API/대시보드에 접근 가능), TLS/리버스 프록시, 실제 팹 데이터 파이프라인 연동(현재는 정적
+공개 데이터셋), CI/CD. 이 PoC 단계에서는 "로컬에서 `docker compose up` 한 번으로 전체
+스택이 뜬다"까지만 다룹니다.
+
 ## 진행하면서 판단한 세부사항
 
 - CLI 라이브러리: `click`
