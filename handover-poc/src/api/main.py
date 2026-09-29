@@ -76,6 +76,11 @@ class HandoverRequest(BaseModel):
     reason: str
 
 
+@app.get("/")
+def root() -> dict:
+    return {"name": "Handover PoC API", "docs": "/docs"}
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
