@@ -1,12 +1,13 @@
 # handover-poc
 
-반도체 불량 대응 인수인계 자동화 — 핵심 로직 PoC (1단계).
+반도체 불량 대응 인수인계 자동화 — 핵심 로직 PoC.
 
 세 개의 공개 데이터셋(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 하나의
 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인을 판정해 주관 부서(M-ENG/P-ENG/YI)를
 제안하는 시스템의 프로토타입입니다. 핵심 로직(ingest/signals/scenarios/diagnosis)은
-순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI·부서 간 인수인계("핑퐁") 추적·Streamlit
-대시보드가 모두 그 위에 얇게 얹혀 있습니다. PDF·LLM 요약은 다음 단계입니다.
+순수 함수 위주로 짜여 있고, CLI·SQLite·FastAPI·부서 간 인수인계("핑퐁") 추적·PDF
+리포트·LLM 요약·Streamlit 대시보드·Docker 배포가 모두 그 위에 얇게 얹혀 있습니다.
+남은 범위는 [Scope](#scope)를 참고하세요.
 
 [Quick Start](#quick-start) · [Data](#data) · [CLI](#cli-usage) · [API](#api-usage-fastapi) ·
 [Handover tracking](#handover-tracking-핑퐁) · [PDF report](#pdf-report) · [LLM summary](#llm-summary-claude-api) ·
@@ -271,6 +272,7 @@ docker compose up --build
 
 이 PoC 단계에서는 "로컬에서 `docker compose up` 한 번으로 전체 스택이 뜬다"까지만 다룹니다. 아래는 다음 단계 후보로 남겨둔, 이번 범위에 포함하지 않은 것입니다.
 
+- 딥러닝 비전 분류 모델 — 비전 신호는 WM-811K에 이미 붙어 있는 라벨을 그대로 인용합니다. 라벨이 없는 새 웨이퍼를 픽셀에서 분류하는 모델은 로드맵 진행 중 의도적으로 제외하기로 결정했습니다
 - 인증/접근 권한 (현재는 누구나 API/대시보드에 접근 가능)
 - TLS/리버스 프록시
 - 실제 팹 데이터 파이프라인 연동 (현재는 정적 공개 데이터셋)
