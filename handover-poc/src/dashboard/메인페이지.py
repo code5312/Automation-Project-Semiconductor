@@ -1,19 +1,24 @@
 """Streamlit dashboard entry point.
 
-Run with: streamlit run src/dashboard/app.py
+Run with: streamlit run src/dashboard/메인페이지.py
 
 Pages live in src/dashboard/pages/ (Streamlit auto-discovers that folder
-next to this script and lists them in the sidebar).
+next to this script and lists them in the sidebar). The file is named
+메인페이지.py (rather than app.py) because Streamlit's legacy multipage nav
+derives the sidebar label directly from the script's filename -- there is
+no separate "nav title" setting for the entry script, only st.set_page_config's
+page_title (browser tab only). Renaming the file is the supported way to
+control that label.
 """
 import sys
 from pathlib import Path
 
 # Make sure the project root is importable as `src...` regardless of the
 # launch cwd (sys.path[0] otherwise depends on how/where `streamlit run`
-# was invoked). app.py sits at src/dashboard/app.py -- two levels below the
-# project root (parents[2]), unlike pages/*.py which are three levels down
-# (parents[3]) -- mixing these up is exactly the bug a real-data smoke test
-# caught here: it silently inserted the *parent* of the project root.
+# was invoked). 메인페이지.py sits at src/dashboard/메인페이지.py -- two levels
+# below the project root (parents[2]), unlike pages/*.py which are three
+# levels down (parents[3]) -- mixing these up is exactly the bug a real-data
+# smoke test caught here: it silently inserted the *parent* of the project root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import streamlit as st
@@ -62,6 +67,7 @@ st.markdown(
     - **② 이벤트 상세** — 신호·판정 근거·핑퐁 이력 확인, 재할당 기록
     - **③ 부서 현황** — 부서별 현재 담당 건수, 핑퐁 랭킹
     - **④ 규칙 튜닝** — 판정 가중치/임계값을 바꿔보고 정확도 미리보기 (파일에는 저장되지 않음)
+    - **⑤ 부서 관리** — 부서별 연락처 및 담당 인원 현황
 
     좌측 사이드바에서 페이지를 선택하세요. 데이터가 없다면 "이벤트 목록" 페이지에서 먼저
     이벤트를 생성하세요. CLI/API와 같은 `src.storage.repository`/`src.cli.build_event`를

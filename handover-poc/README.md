@@ -188,10 +188,10 @@ API: `GET /events/{event_id}/summary` → `{"event_id", "summary"}` (인증 실�
 ## Dashboard (Streamlit)
 
 ```bash
-./.venv/Scripts/python.exe -m streamlit run src/dashboard/app.py
+./.venv/Scripts/python.exe -m streamlit run src/dashboard/메인페이지.py
 ```
 
-4개 페이지(`src/dashboard/pages/`)로 구성되어 있고, FastAPI 서버를 따로 띄우지 않고 `src.storage.repository`/`src.cli.build_event`를 CLI/API와 동일하게 직접 호출합니다(이 PoC는 단일 머신이라 HTTP 홉을 추가하지 않는 쪽을 선택했습니다).
+5개 페이지(`src/dashboard/pages/`)로 구성되어 있고, FastAPI 서버를 따로 띄우지 않고 `src.storage.repository`/`src.cli.build_event`를 CLI/API와 동일하게 직접 호출합니다(이 PoC는 단일 머신이라 HTTP 홉을 추가하지 않는 쪽을 선택했습니다).
 
 | 페이지 | 내용 |
 |---|---|
@@ -199,8 +199,27 @@ API: `GET /events/{event_id}/summary` → `{"event_id", "summary"}` (인증 실�
 | ② 이벤트 상세 | 신호·판정 근거(scores/contributions)·핑퐁 이력, 재할당 기록 폼 |
 | ③ 부서 현황 | 부서별 현재 담당 건수, 핑퐁 랭킹(`repository.list_events_with_status`) |
 | ④ 규칙 튜닝 | 가중치/임계값을 슬라이더로 바꿔보고 `experiments.compute_batch_results`로 즉시 정확도·혼동행렬 미리보기 — 파일에는 저장되지 않음(주석 있는 `rules.yaml`을 자동 덮어쓰지 않기 위한 설계) |
+| ⑤ 부서 관리 | 부서별 대표 연락처 + 담당 인원(이름/직급/연락처/이메일) 표 — 현재는 실제 인사 데이터 연동 전 예시 데이터(`src/dashboard/pages/5_부서_관리.py`의 `DEPT_DIRECTORY`) |
 
 `dataviz` 스킬의 검증된 팔레트(`references/palette.md`)를 그대로 가져와 쓰며, 부서(YI/MFG/M-ENG/P-ENG) 배지 색은 팔레트의 카테고리 1~4번 슬롯에 고정 순서로 매핑됩니다(`src/dashboard/common.py`의 `DEPT_COLORS`) — 같은 부서는 어느 페이지에서든 같은 색으로 보입니다. 디자인 세부사항은 [Design notes](#design-notes)를 참고하세요.
+
+### 외부 접속 (내 PC에서 띄운 대시보드를 다른 사람도 보게 하기)
+
+Streamlit은 지속적인 WebSocket 연결이 필요한 서버라 Vercel 같은 서버리스 플랫폼에는 그대로 올라가지 않습니다 (실행 시간 제한 + WebSocket 미지원). 가장 간단한 대안은 로컬에서 띄운 서버를 터널로 외부에 노출하는 것입니다:
+
+```powershell
+# 최초 1회: cloudflared 설치 (Cloudflare 계정 불필요)
+winget install --id Cloudflare.cloudflared -e
+
+# 대시보드 실행 + 외부 접속용 HTTPS 터널을 한 번에
+./scripts/start-external.ps1
+```
+
+실행하면 `https://<랜덤문자열>.trycloudflare.com` 형태의 링크가 출력되고, 이 링크를 아는 사람은 누구나 대시보드에 접속할 수 있습니다. 터미널을 `Ctrl+C`로 종료하면 터널과 서버가 함께 내려갑니다.
+
+> ⚠️ 이 대시보드는 불량 이벤트 데이터를 보여주고 "AI 요약" 버튼으로 Anthropic API를 호출합니다. 터널 링크는 접근 제어가 없으므로, 공유 대상과 공개 시간을 직접 관리하세요 (필요 없을 때는 꺼두기).
+
+상시 운영이 필요하면(내 PC를 계속 켜둘 수 없는 경우) 터널 대신 Streamlit Community Cloud나 Render/Railway 같은 Python 호스팅에 이 저장소를 배포하는 쪽을 권장합니다.
 
 ---
 
@@ -284,7 +303,7 @@ docker compose up --build
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| `streamlit run src/dashboard/pages/*.py`를 직접 실행하면 `ModuleNotFoundError: No module named 'src'` | `-m streamlit`이 아닌 방식으로 실행하면 프로젝트 루트가 `sys.path`에 없음 | 항상 프로젝트 루트에서 `-m streamlit run src/dashboard/app.py`로 실행. 각 페이지 파일 최상단에 `sys.path.insert(...)` 보정이 이미 적용되어 있음 |
+| `streamlit run src/dashboard/pages/*.py`를 직접 실행하면 `ModuleNotFoundError: No module named 'src'` | `-m streamlit`이 아닌 방식으로 실행하면 프로젝트 루트가 `sys.path`에 없음 | 항상 프로젝트 루트에서 `-m streamlit run src/dashboard/메인페이지.py`로 실행. 각 페이지 파일 최상단에 `sys.path.insert(...)` 보정이 이미 적용되어 있음 |
 | API 테스트가 몇 분씩 걸림 | `with TestClient(app) as c:`로 쓰면 실제 `lifespan`이 실행되어 `dependency_overrides`와 무관하게 진짜 대용량 데이터를 로드함 | `TestClient(app)`을 컨텍스트 매니저 없이 인스턴스로만 사용 (이미 적용됨) |
 | PDF 리포트의 한글이 빈칸으로 나오고 표 열이 겹침 | ReportLab 기본 CID 폰트(`HYSMyeongJo-Medium` 등)는 이름만 참조하고 실제 폰트 파일을 담지 않음 | OS별 경로에서 실제 폰트 파일(Malgun Gothic/NanumGothic)을 찾아 임베드하도록 이미 수정됨(`_register_fonts()`); 폰트가 없으면 CID로 폴백 |
 | `LSWMD.pkl` 로딩이 매우 느리거나 실패 | 오래된 pandas/Python 2 pickle이라 모듈 경로·인코딩이 최신 pandas와 다름 | 최초 1회 5~8분은 정상(호환 패치가 처리). 이후엔 자동 생성된 `wm811k_labeled_cache.pkl`을 읽어 수 초 안에 끝남. 캐시를 지우면 다시 5~8분 걸림 |

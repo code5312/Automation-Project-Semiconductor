@@ -12,7 +12,7 @@ services:
 
   dashboard:
     build: .
-    command: streamlit run src/dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+    command: streamlit run src/dashboard/메인페이지.py --server.address 0.0.0.0 --server.port 8501
     ports:
       - "8501:8501"
     volumes:

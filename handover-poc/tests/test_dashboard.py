@@ -24,17 +24,18 @@ DASHBOARD_DIR = PROJECT_ROOT / "src" / "dashboard"
 
 
 def test_every_dashboard_script_has_a_correct_sys_path_bootstrap():
-    """Regression test for a real bug: app.py copy-pasted pages/*.py's
-    `parents[3]` bootstrap unchanged, but app.py sits one directory shallower
-    (src/dashboard/app.py vs src/dashboard/pages/x.py), so it silently
-    inserted the project root's *parent* instead -- `from src...` still
-    worked wherever something else (pytest's own sys.path, or cwd under
-    `streamlit run`) happened to paper over it, and only broke for a bare
-    `python app.py`-style invocation. Check the arithmetic directly rather
-    than relying on some other sys.path entry to mask a wrong depth again.
+    """Regression test for a real bug: the entry script (메인페이지.py, formerly
+    app.py) copy-pasted pages/*.py's `parents[3]` bootstrap unchanged, but it
+    sits one directory shallower (src/dashboard/메인페이지.py vs
+    src/dashboard/pages/x.py), so it silently inserted the project root's
+    *parent* instead -- `from src...` still worked wherever something else
+    (pytest's own sys.path, or cwd under `streamlit run`) happened to paper
+    over it, and only broke for a bare `python 메인페이지.py`-style invocation.
+    Check the arithmetic directly rather than relying on some other sys.path
+    entry to mask a wrong depth again.
     """
-    scripts = [DASHBOARD_DIR / "app.py"] + sorted((DASHBOARD_DIR / "pages").glob("*.py"))
-    assert len(scripts) == 5, f"expected app.py + 4 pages, found {[s.name for s in scripts]}"
+    scripts = [DASHBOARD_DIR / "메인페이지.py"] + sorted((DASHBOARD_DIR / "pages").glob("*.py"))
+    assert len(scripts) == 6, f"expected 메인페이지.py + 5 pages, found {[s.name for s in scripts]}"
 
     for script in scripts:
         text = script.read_text(encoding="utf-8")
@@ -63,10 +64,11 @@ def fake_dashboard_resources(tmp_path, monkeypatch):
 
 
 def test_home_page_loads_without_exception():
-    # app.py queries repository.list_events_with_status() for its KPI row,
-    # which can occasionally miss AppTest's default 3s timeout under load
-    # (same reasoning as the longer timeout on the PDF-generation tests below).
-    at = AppTest.from_file(str(DASHBOARD_DIR / "app.py"), default_timeout=15)
+    # 메인페이지.py queries repository.list_events_with_status() for its KPI
+    # row, which can occasionally miss AppTest's default 3s timeout under
+    # load (same reasoning as the longer timeout on the PDF-generation tests
+    # below).
+    at = AppTest.from_file(str(DASHBOARD_DIR / "메인페이지.py"), default_timeout=15)
     at.run()
     assert not at.exception
 
@@ -163,6 +165,13 @@ def test_dept_status_page_loads_with_empty_state():
     at.run()
     assert not at.exception
     assert any("이벤트가 없습니다" in info.value for info in at.info)
+
+
+def test_dept_management_page_loads_without_exception():
+    at = AppTest.from_file(str(DASHBOARD_DIR / "pages" / "5_부서_관리.py"))
+    at.run()
+    assert not at.exception
+    assert any("부서 관리" in m.value for m in at.title)
 
 
 def test_rule_tuning_page_loads_and_runs_preview():
