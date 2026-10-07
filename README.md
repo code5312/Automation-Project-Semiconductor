@@ -24,7 +24,7 @@
 
 | 프로젝트 | 설명 |
 |---|---|
-| [`handover-poc`](handover-poc) | 반도체 불량 대응 인수인계 자동화 핵심 로직 PoC. 공개 데이터셋 3종(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인과 담당 부서(M-ENG/P-ENG/YI)를 판정합니다. CLI, SQLite, FastAPI, 부서 간 인수인계 이력 추적, Streamlit 대시보드, PDF 리포트, Claude API 기반 요약까지 포함합니다. |
+| [`handover-poc`](handover-poc) | 반도체 불량 대응 인수인계 자동화 핵심 로직 PoC. 공개 데이터셋 3종(UCI SECOM, NASA IMS 베어링 진동, WM-811K)에서 뽑은 신호를 가상 불량 이벤트로 묶고, 규칙 기반 엔진으로 원인과 담당 부서(M-ENG/P-ENG/YI)를 판정합니다. CLI, SQLite, FastAPI, 부서 간 인수인계 이력 추적, Streamlit 대시보드, PDF 리포트, Claude API 기반 요약, Docker 배포, Cloudflare Tunnel을 통한 외부 접속까지 포함합니다. |
 
 > [!NOTE]
 > 설치, CLI/API 사용법, 데이터 배치, 테스트 방법은 [`handover-poc/README.md`](handover-poc/README.md)를 참고하세요.
