@@ -217,6 +217,15 @@ winget install --id Cloudflare.cloudflared -e
 
 실행하면 `https://<랜덤문자열>.trycloudflare.com` 형태의 링크가 출력되고, 이 링크를 아는 사람은 누구나 대시보드에 접속할 수 있습니다. 터미널을 `Ctrl+C`로 종료하면 터널과 서버가 함께 내려갑니다.
 
+Docker Compose로 띄운 경우(`docker compose up --build`)는 `start-external.ps1` 대신 `start-external-docker.ps1`을 씁니다 — Streamlit을 새로 띄우지 않고, 이미 `docker-compose.yml`이 호스트의 8501 포트에 열어둔 대시보드 위에 터널만 추가합니다:
+
+```powershell
+./scripts/start-external-docker.ps1
+```
+
+> [!NOTE]
+> `*.trycloudflare.com` 주소는 Cloudflare Quick Tunnel이 실행마다 무작위로 발급하는 것이라, 원하는 서브도메인으로 고정할 수 없습니다. 고정 주소가 필요하면 직접 소유한 도메인을 Cloudflare에 등록하고 named tunnel로 연결해야 합니다.
+
 > ⚠️ 이 대시보드는 불량 이벤트 데이터를 보여주고 "AI 요약" 버튼으로 Anthropic API를 호출합니다. 터널 링크는 접근 제어가 없으므로, 공유 대상과 공개 시간을 직접 관리하세요 (필요 없을 때는 꺼두기).
 
 상시 운영이 필요하면(내 PC를 계속 켜둘 수 없는 경우) 터널 대신 Streamlit Community Cloud나 Render/Railway 같은 Python 호스팅에 이 저장소를 배포하는 쪽을 권장합니다.
