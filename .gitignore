@@ -6,3 +6,6 @@ uci-secom.csv
 
 # Claude Code's own local session state -- machine-specific, not project source.
 .claude/
+
+# Python virtual environment -- machine-specific, not project source.
+.venv/
