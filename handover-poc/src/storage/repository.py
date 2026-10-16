@@ -246,24 +246,51 @@ def add_handover(
 
     Raises ValueError if the event doesn't exist or the handover itself
     doesn't make sense (see src.handover.tracker.validate_handover).
+
+    The current-dept read, validation and insert all happen inside a single
+    BEGIN IMMEDIATE transaction on one connection, so two concurrent calls
+    for the same event_id (e.g. two API requests handled on different
+    threads) are serialized by SQLite's write lock instead of racing on a
+    stale current_dept read.
     """
-    current_dept = get_current_dept(db_path, event_id)
-    validate_handover(current_dept, to_dept, reason)
-
-    record = {
-        "from_dept": current_dept,
-        "to_dept": to_dept,
-        "reason": reason,
-        "created_at": created_at or datetime.now(timezone.utc).isoformat(),
-    }
-
     init_db(db_path)
-    with _connect(db_path) as conn:
+    path = Path(db_path)
+    conn = sqlite3.connect(path, isolation_level=None)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+
+        row = conn.execute("SELECT raw_json FROM events WHERE event_id = ?", (event_id,)).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            raise ValueError(f"Unknown event_id: {event_id}")
+        event = json.loads(row[0])
+
+        last = conn.execute(
+            "SELECT to_dept FROM handovers WHERE event_id = ? ORDER BY id DESC LIMIT 1",
+            (event_id,),
+        ).fetchone()
+        current_dept = last[0] if last else event["diagnosis"]["primary_dept"]
+
+        try:
+            validate_handover(current_dept, to_dept, reason)
+        except ValueError:
+            conn.execute("ROLLBACK")
+            raise
+
+        record = {
+            "from_dept": current_dept,
+            "to_dept": to_dept,
+            "reason": reason,
+            "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+        }
         conn.execute(
             "INSERT INTO handovers (event_id, from_dept, to_dept, reason, created_at) VALUES (?, ?, ?, ?, ?)",
             (event_id, record["from_dept"], record["to_dept"], record["reason"], record["created_at"]),
         )
-    return record
+        conn.execute("COMMIT")
+        return record
+    finally:
+        conn.close()
 
 
 def get_pingpong_count(db_path: str | Path, event_id: str) -> int:

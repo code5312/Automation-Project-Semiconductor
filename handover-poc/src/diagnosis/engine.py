@@ -14,6 +14,7 @@ to Gaussian: kurtosis ~3, crest factor ~3-4; impulsive faults push both
 higher). Only if neither health_index nor kurtosis/crest_factor is
 available does vibration contribute nothing, and that is noted.
 """
+import math
 from typing import Optional
 
 
@@ -35,7 +36,12 @@ def _kurtosis_crest_abnormality(vibration: dict, thresholds: dict) -> Optional[f
     mechanical fault. None if either stat is missing."""
     kurtosis = vibration.get("kurtosis")
     crest_factor = vibration.get("crest_factor")
-    if kurtosis is None or crest_factor is None:
+    if (
+        kurtosis is None
+        or crest_factor is None
+        or math.isnan(kurtosis)
+        or math.isnan(crest_factor)
+    ):
         return None
 
     k_base, k_cap = thresholds["kurtosis_baseline"], thresholds["kurtosis_cap"]
