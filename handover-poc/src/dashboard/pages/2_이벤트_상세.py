@@ -18,6 +18,17 @@ from src.storage import repository as repo
 st.set_page_config(page_title="이벤트 상세", page_icon="🔍", layout="wide")
 inject_theme()
 
+
+@st.cache_data(show_spinner=False)
+def _handover_pdf_bytes(event: dict, history: list[dict]) -> bytes:
+    """Cached by (event, history) so an unrelated widget interaction on this
+    page (AI 요약 버튼, 재할당 폼 등) doesn't force Streamlit to re-render
+    the PDF on every rerun -- only an actual new handover busts the cache."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pdf_path = Path(tmp_dir) / f"{event['event_id']}.pdf"
+        generate_handover_pdf(event, history, pdf_path)
+        return pdf_path.read_bytes()
+
 st.markdown('<p class="hp-eyebrow">EVENT DETAIL</p>', unsafe_allow_html=True)
 st.title("이벤트 상세")
 
@@ -48,10 +59,7 @@ with title_col:
         badge_row += " &nbsp;·&nbsp; 🔒 **MFG Hold**"
     st.caption(badge_row)
 with dl_col:
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        pdf_path = Path(tmp_dir) / f"{event_id}.pdf"
-        generate_handover_pdf(event, history, pdf_path)
-        pdf_bytes = pdf_path.read_bytes()
+    pdf_bytes = _handover_pdf_bytes(event, history)
     st.download_button(
         "📄 PDF 다운로드",
         data=pdf_bytes,
