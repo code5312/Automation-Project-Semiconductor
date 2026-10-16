@@ -12,6 +12,14 @@ from typing import Optional
 VALID_DEPTS = ("YI", "MFG", "M-ENG", "P-ENG")
 
 
+def current_dept_from_history(primary_dept: Optional[str], history: list[dict]) -> Optional[str]:
+    """The event's current owning department: the last handover's to_dept,
+    or its original diagnosis.primary_dept if it has never been handed
+    over. `history` must be oldest-first, as returned by
+    src.storage.repository.list_handovers."""
+    return history[-1]["to_dept"] if history else primary_dept
+
+
 def validate_handover(current_dept: Optional[str], to_dept: str, reason: str) -> None:
     """Raises ValueError if this handover step doesn't make sense.
 

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import streamlit as st
 
 from src.dashboard.common import dept_badge, get_db_path, inject_theme
-from src.handover.tracker import VALID_DEPTS
+from src.handover.tracker import VALID_DEPTS, current_dept_from_history
 from src.llm.summarize import summarize_diagnosis
 from src.report.pdf import generate_handover_pdf
 from src.storage import repository as repo
@@ -111,7 +111,7 @@ st.write("")
 st.divider()
 st.subheader("핑퐁 이력")
 
-current_dept = history[-1]["to_dept"] if history else diagnosis["primary_dept"]
+current_dept = current_dept_from_history(diagnosis["primary_dept"], history)
 
 m1, m2 = st.columns(2)
 with m1:

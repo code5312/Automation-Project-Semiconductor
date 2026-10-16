@@ -30,6 +30,8 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from src.handover.tracker import current_dept_from_history
+
 # (regular, bold) candidate paths, checked in order, per platform.
 _TTF_CANDIDATES: list[tuple[str, str]] = [
     (r"C:\Windows\Fonts\malgun.ttf", r"C:\Windows\Fonts\malgunbd.ttf"),  # Windows: Malgun Gothic
@@ -151,7 +153,7 @@ def generate_handover_pdf(event: dict, handovers: list[dict], out_path: str | Pa
     diagnosis = event["diagnosis"]
     signals = event["signals"]
     vision, sensor, vibration = signals["vision"], signals["sensor"], signals["vibration"]
-    current_dept = handovers[-1]["to_dept"] if handovers else diagnosis["primary_dept"]
+    current_dept = current_dept_from_history(diagnosis["primary_dept"], handovers)
 
     story = [
         Paragraph("반도체 불량 대응 인수인계 보고서", styles["title"]),

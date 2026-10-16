@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
-from src.handover.tracker import validate_handover
+from src.handover.tracker import current_dept_from_history, validate_handover
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -230,9 +230,7 @@ def get_current_dept(db_path: str | Path, event_id: str) -> Optional[str]:
         raise ValueError(f"Unknown event_id: {event_id}")
 
     history = list_handovers(db_path, event_id)
-    if history:
-        return history[-1]["to_dept"]
-    return event["diagnosis"]["primary_dept"]
+    return current_dept_from_history(event["diagnosis"]["primary_dept"], history)
 
 
 def add_handover(

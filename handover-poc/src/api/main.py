@@ -20,6 +20,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from src.cli import DEFAULT_DB_PATH, build_event, load_rules
+from src.handover.tracker import current_dept_from_history
 from src.ingest import validate as validate_mod
 from src.llm.summarize import summarize_diagnosis
 from src.report.pdf import generate_handover_pdf
@@ -160,7 +161,7 @@ def get_handovers(event_id: str, db_path: str = Depends(get_db_path)) -> dict:
     if event is None:
         raise HTTPException(status_code=404, detail="event not found")
     history = repo.list_handovers(db_path, event_id)
-    current_dept = history[-1]["to_dept"] if history else event["diagnosis"]["primary_dept"]
+    current_dept = current_dept_from_history(event["diagnosis"]["primary_dept"], history)
     return {
         "event_id": event_id,
         "current_dept": current_dept,
