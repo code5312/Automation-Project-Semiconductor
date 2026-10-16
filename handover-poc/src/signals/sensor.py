@@ -99,6 +99,24 @@ def extract_sensor_signal(model: SensorModel, df: pd.DataFrame, row_idx: int) ->
 
 
 def compute_anomaly_scores_batch(model: SensorModel, df: pd.DataFrame) -> pd.Series:
-    """Anomaly score for every row in df, indexed the same as df."""
-    scores = {idx: extract_sensor_signal(model, df, idx)["anomaly_score"] for idx in df.index}
-    return pd.Series(scores)
+    """Anomaly score for every row in df, indexed the same as df.
+
+    Vectorized equivalent of calling extract_sensor_signal() per row and
+    keeping only its anomaly_score -- scaling, the top-N |z| mean (or the
+    IsolationForest score_samples call), and the min-max normalization all
+    run once over the whole batch instead of once per row.
+    """
+    z = model.scaler.transform(df[model.feature_cols])
+
+    if model.method == "topn_zscore":
+        abs_z = np.abs(z)
+        top_mean = np.sort(abs_z, axis=1)[:, -model.top_n :].mean(axis=1)
+        anomaly_score = 1.0 - np.exp(-top_mean / 3.0)
+    elif model.method == "isolation_forest":
+        raw = -model.iso_forest.score_samples(z)  # higher = more anomalous
+        span = model.iso_score_max - model.iso_score_min
+        anomaly_score = (raw - model.iso_score_min) / span if span > 0 else np.zeros_like(raw)
+    else:
+        raise ValueError(f"Unknown method: {model.method}")
+
+    return pd.Series(np.clip(anomaly_score, 0.0, 1.0), index=df.index)
